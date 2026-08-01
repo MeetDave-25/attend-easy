@@ -146,6 +146,7 @@ export type ConflictType =
   | 'division_conflict'
   | 'lab_conflict'
   | 'workload_conflict'
+  | 'validation_error'
   | 'unavailable_faculty'
   | 'holiday_conflict';
 

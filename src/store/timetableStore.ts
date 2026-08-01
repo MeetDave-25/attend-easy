@@ -88,6 +88,15 @@ interface TimetableState {
   setGenerationResult: (result: GenerationResult | null) => void;
   setIsGenerating: (val: boolean) => void;
   setConflicts: (conflicts: Conflict[]) => void;
+  hydrateSharedData: (data: {
+    collegeConfig?: CollegeConfig;
+    faculty?: Faculty[];
+    subjects?: Subject[];
+    classrooms?: Classroom[];
+    semesters?: Semester[];
+    timeSlots?: TimeSlot[];
+    timetableEntries?: TimetableEntry[];
+  }) => void;
 
   // Actions — Requests
   addRequest: (req: Omit<Request, 'id' | 'createdAt'>) => void;
@@ -261,6 +270,12 @@ export const useTimetableStore = create<TimetableState>()(
       setGenerationResult: (result) => set({ generationResult: result }),
       setIsGenerating: (val) => set({ isGenerating: val }),
       setConflicts: (conflicts) => set({ conflicts }),
+      hydrateSharedData: (data) => set((state) => ({
+        ...state,
+        ...data,
+        generationResult: null,
+        conflicts: [],
+      })),
 
       // Requests
       addRequest: (req) =>
@@ -352,8 +367,8 @@ export const useTimetableStore = create<TimetableState>()(
             },
             { 
               id: s2Id, name: 'Data Structures', code: 'CS102', semester: 1, division: 'A', 
-              facultyId: f2Id, lectureCountPerWeek: 4, labRequired: true, theoryHours: 3, 
-              labHours: 2, credits: 4, type: 'theory', year: 1 
+              facultyId: f2Id, lectureCountPerWeek: 4, labRequired: false, theoryHours: 3,
+              labHours: 0, credits: 4, type: 'theory', year: 1
             }
           ],
           classrooms: [

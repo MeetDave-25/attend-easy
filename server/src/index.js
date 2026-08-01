@@ -8,6 +8,7 @@ import studentsRouter from './routes/students.js';
 import subjectsRouter from './routes/subjects.js';
 import attendanceRouter from './routes/attendance.js';
 import marksRouter from './routes/marks.js';
+import syncRouter from './routes/sync.js';
 
 dotenv.config();
 
@@ -58,6 +59,7 @@ app.use('/api/students', studentsRouter);
 app.use('/api/subjects', subjectsRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use('/api/marks', marksRouter);
+app.use('/api/sync', syncRouter);
 
 app.get('/', (req, res) => {
     res.json({
@@ -68,7 +70,8 @@ app.get('/', (req, res) => {
             students: '/api/students',
             subjects: '/api/subjects',
             attendance: '/api/attendance',
-            marks: '/api/marks'
+            marks: '/api/marks',
+            sync: '/api/sync'
         }
     });
 });

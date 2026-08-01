@@ -5,10 +5,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import TimetableGrid from "./TimetableGrid";
+import { downloadTimetableCsv } from "@/lib/timetableExport";
 
 const TimetableViews = () => {
   const { 
-    timetableEntries, semesters, faculty, classrooms, collegeConfig, 
+    timetableEntries, semesters, faculty, subjects, classrooms, collegeConfig,
     activeView, setActiveView, selectedSemesterId, setSelectedSemester, 
     selectedDivisionId, setSelectedDivision 
   } = useTimetableStore();
@@ -46,9 +47,14 @@ const TimetableViews = () => {
           <h2 className="section-title">Timetable Viewer</h2>
           <p className="section-subtitle">View and print schedules from multiple perspectives.</p>
         </div>
-        <Button onClick={handlePrint} variant="outline" className="gap-2">
-          <Download className="w-4 h-4" /> Export / Print
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => downloadTimetableCsv(timetableEntries, subjects, faculty, classrooms, semesters)} variant="outline" className="gap-2">
+            <Download className="w-4 h-4" /> Download CSV
+          </Button>
+          <Button onClick={handlePrint} variant="outline" className="gap-2">
+            <Download className="w-4 h-4" /> Print / PDF
+          </Button>
+        </div>
       </div>
 
       <div className="glass-card p-4 rounded-2xl">

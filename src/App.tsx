@@ -10,6 +10,7 @@ import Landing from "./pages/Landing";
 import StudentPortal from "./pages/StudentPortal";
 import ModernSplashScreen from "./components/shared/ModernSplashScreen";
 import { useTimetableStore } from "./store/timetableStore";
+import { syncAPI } from "./lib/api";
 
 const queryClient = new QueryClient();
 
@@ -26,14 +27,101 @@ const App = () => {
     return !sessionStorage.getItem("splashShown");
   });
 
+  const currentUserId = useTimetableStore(state => state.currentUser?.id);
+
   useEffect(() => {
-    // Automatically load dummy data on startup if the app isn't configured yet
-    const store = useTimetableStore.getState();
-    if (!store.collegeConfig.isConfigured && store.faculty.length === 0) {
-      store.loadDummyData();
-      console.log("Dummy data automatically loaded for testing.");
-    }
-  }, []);
+    if (!currentUserId) return;
+
+    let isDisposed = false;
+    let isHydrated = false;
+    let saveTimer: number | undefined;
+
+    const getPayload = () => {
+      const state = useTimetableStore.getState();
+      return {
+        faculty: state.faculty,
+        subjects: state.subjects,
+        classrooms: state.classrooms,
+        semesters: state.semesters,
+        timeSlots: state.timeSlots,
+        timetableEntries: state.timetableEntries,
+        collegeConfig: state.collegeConfig,
+      };
+    };
+
+    const hasWorkspaceData = (state: ReturnType<typeof useTimetableStore.getState>) =>
+      state.collegeConfig.isConfigured ||
+      state.faculty.length > 0 ||
+      state.subjects.length > 0 ||
+      state.classrooms.length > 0 ||
+      state.semesters.length > 0 ||
+      state.timeSlots.length > 0 ||
+      state.timetableEntries.length > 0;
+
+    const saveToServer = async () => {
+      if (isDisposed || !isHydrated) return;
+      try {
+        await syncAPI.saveState(getPayload());
+      } catch (error) {
+        console.warn("Shared workspace save failed:", error);
+      }
+    };
+
+    const unsubscribe = useTimetableStore.subscribe((state, previousState) => {
+      if (!isHydrated) return;
+      const changed = state.collegeConfig !== previousState.collegeConfig ||
+        state.faculty !== previousState.faculty ||
+        state.subjects !== previousState.subjects ||
+        state.classrooms !== previousState.classrooms ||
+        state.semesters !== previousState.semesters ||
+        state.timeSlots !== previousState.timeSlots ||
+        state.timetableEntries !== previousState.timetableEntries;
+      if (!changed) return;
+
+      if (saveTimer) window.clearTimeout(saveTimer);
+      saveTimer = window.setTimeout(() => { void saveToServer(); }, 700);
+    });
+
+    const loadFromServer = async () => {
+      try {
+        const remote = await syncAPI.getState();
+        if (isDisposed) return;
+
+        const localState = useTimetableStore.getState();
+        const remoteHasData = Boolean(
+          remote.collegeConfig?.isConfigured ||
+          remote.faculty.length ||
+          remote.subjects.length ||
+          remote.classrooms.length ||
+          remote.semesters.length ||
+          remote.timeSlots.length ||
+          remote.timetableEntries.length
+        );
+
+        isHydrated = true;
+        if (remoteHasData) {
+          useTimetableStore.getState().hydrateSharedData({
+            ...remote,
+            collegeConfig: remote.collegeConfig || undefined,
+          });
+        } else if (hasWorkspaceData(localState)) {
+          await saveToServer();
+        }
+      } catch (error) {
+        isHydrated = true;
+        console.warn("Shared workspace load failed:", error);
+      }
+    };
+
+    void loadFromServer();
+
+    return () => {
+      isDisposed = true;
+      isHydrated = false;
+      if (saveTimer) window.clearTimeout(saveTimer);
+      unsubscribe();
+    };
+  }, [currentUserId]);
 
   const handleSplashComplete = () => {
     sessionStorage.setItem("splashShown", "true");

@@ -17,6 +17,7 @@ import TimetableGeneratorV2 from "../timetable/TimetableGeneratorV2";
 import TimetableViews from "../timetable/TimetableViews";
 import ConflictPanel from "../timetable/ConflictPanel";
 import ExcelImportModal from "../shared/ExcelImportModal";
+import TimetableDownload from "../export/TimetableDownload";
 
 const Placeholder = ({ title, desc }: { title: string; desc: string }) => (
   <div className="flex flex-col items-center justify-center h-[60vh] text-center p-8 bg-card rounded-3xl border border-border shadow-sm">
@@ -108,7 +109,7 @@ const AppShell = () => {
                     <Route path="leave" element={<Placeholder title="Leave Management" desc="Apply for leaves and track approval status." />} />
                     <Route path="notifications" element={<Placeholder title="Notifications" desc="System alerts, schedule changes, and request updates." />} />
                     <Route path="reports" element={<Placeholder title="Reports & Analytics" desc="Generate detailed reports on faculty workload, room utilization, and more." />} />
-                    <Route path="downloads" element={<Placeholder title="Downloads & Export" desc="Export timetables to PDF, Excel, and other formats for physical distribution." />} />
+                    <Route path="downloads" element={<TimetableDownload />} />
                   </Routes>
                 </motion.div>
               </AnimatePresence>

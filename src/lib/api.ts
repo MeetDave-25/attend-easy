@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import { Classroom, CollegeConfig, Faculty, Semester, Subject, TimeSlot, TimetableEntry } from '@/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -244,6 +245,36 @@ export const marksAPI = {
 
     getStudentSummary: async (studentId: string) => {
         return api.get(`/marks/student/${studentId}/summary`);
+    },
+};
+
+// Shared college workspace synchronization. This keeps master data and the
+// generated timetable in the server database instead of only in one browser.
+export const syncAPI = {
+    getState: async () => {
+        const response = await api.get<unknown, ApiEnvelope<{
+            faculty: Faculty[];
+            subjects: Subject[];
+            classrooms: Classroom[];
+            semesters: Semester[];
+            timeSlots: TimeSlot[];
+            timetableEntries: TimetableEntry[];
+            collegeConfig: CollegeConfig | null;
+        }>>('/sync');
+        return response.data;
+    },
+
+    saveState: async (state: {
+        faculty: Faculty[];
+        subjects: Subject[];
+        classrooms: Classroom[];
+        semesters: Semester[];
+        timeSlots: TimeSlot[];
+        timetableEntries: TimetableEntry[];
+        collegeConfig: CollegeConfig;
+    }) => {
+        const response = await api.post<unknown, ApiEnvelope<null>>('/sync', state);
+        return response.data;
     },
 };
 
