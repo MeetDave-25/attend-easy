@@ -1,7 +1,22 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 
 const router = express.Router();
+
+const requireSyncUser = (req, res, next) => {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+        return res.status(401).json({ success: false, error: { message: 'Authentication required' } });
+    }
+
+    try {
+        req.user = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        return next();
+    } catch {
+        return res.status(401).json({ success: false, error: { message: 'Invalid or expired token' } });
+    }
+};
 
 const toCamel = (rows) => rows.map(row => Object.fromEntries(
     Object.entries(row).map(([key, value]) => [
@@ -11,7 +26,7 @@ const toCamel = (rows) => rows.map(row => Object.fromEntries(
 ));
 
 // Load the shared college workspace for a new device/browser.
-router.get('/', async (req, res) => {
+router.get('/', requireSyncUser, async (req, res) => {
     try {
         const [
             facultyRes,
@@ -60,7 +75,7 @@ router.get('/', async (req, res) => {
 // Replace the shared workspace with the latest complete Zustand snapshot.
 // This app currently has one college workspace, so every authenticated device
 // sees the same data. The transaction prevents half an import being visible.
-router.post('/', async (req, res) => {
+router.post('/', requireSyncUser, async (req, res) => {
     const client = await pool.connect();
     try {
         const {

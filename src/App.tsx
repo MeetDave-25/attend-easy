@@ -35,6 +35,7 @@ const App = () => {
     let isDisposed = false;
     let isHydrated = false;
     let saveTimer: number | undefined;
+    let loadInProgress = false;
 
     const getPayload = () => {
       const state = useTimetableStore.getState();
@@ -59,7 +60,7 @@ const App = () => {
       state.timetableEntries.length > 0;
 
     const saveToServer = async () => {
-      if (isDisposed || !isHydrated) return;
+      if (isDisposed || !isHydrated || loadInProgress) return;
       try {
         await syncAPI.saveState(getPayload());
       } catch (error) {
@@ -83,6 +84,9 @@ const App = () => {
     });
 
     const loadFromServer = async () => {
+      if (isDisposed || loadInProgress) return;
+      loadInProgress = true;
+      isHydrated = false;
       try {
         const remote = await syncAPI.getState();
         if (isDisposed) return;
@@ -98,27 +102,35 @@ const App = () => {
           remote.timetableEntries.length
         );
 
-        isHydrated = true;
         if (remoteHasData) {
           useTimetableStore.getState().hydrateSharedData({
             ...remote,
             collegeConfig: remote.collegeConfig || undefined,
           });
         } else if (hasWorkspaceData(localState)) {
+          isHydrated = true;
           await saveToServer();
         }
+        isHydrated = true;
       } catch (error) {
         isHydrated = true;
         console.warn("Shared workspace load failed:", error);
+      } finally {
+        loadInProgress = false;
       }
     };
 
     void loadFromServer();
+    const refreshOnFocus = () => { void loadFromServer(); };
+    window.addEventListener("focus", refreshOnFocus);
+    const refreshTimer = window.setInterval(() => { void loadFromServer(); }, 30000);
 
     return () => {
       isDisposed = true;
       isHydrated = false;
       if (saveTimer) window.clearTimeout(saveTimer);
+      window.clearInterval(refreshTimer);
+      window.removeEventListener("focus", refreshOnFocus);
       unsubscribe();
     };
   }, [currentUserId]);
