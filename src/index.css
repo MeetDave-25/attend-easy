@@ -540,3 +540,34 @@
 .workflow-strip { display: grid; grid-template-columns: .8fr 1.2fr; gap: 60px; padding-top: 84px; padding-bottom: 84px; border-top: 1px solid var(--line); }.workflow-intro h2, .feature-band h2 { margin: 16px 0 0; font-size: clamp(2rem, 4vw, 3.4rem); line-height: .98; letter-spacing: -.07em; }.workflow-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }.workflow-steps > div { position: relative; padding: 4px 0 0 18px; border-left: 1px solid var(--line); }.workflow-steps > div > span { position: absolute; top: 0; right: 0; color: var(--muted-ink); font-size: 10px; }.workflow-steps svg { color: var(--coral); }.workflow-steps h3 { margin: 28px 0 8px; font-size: 13px; }.workflow-steps p { margin: 0; color: var(--muted-ink); font-size: 11px; line-height: 1.6; }.feature-band { display: flex; align-items: end; justify-content: space-between; gap: 40px; padding-top: 52px; padding-bottom: 52px; border-top: 1px solid var(--line); }.feature-list { display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); gap: 16px 36px; color: var(--muted-ink); font-size: 11px; }.feature-list span::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 9px; border-radius: 50%; background: var(--cyan); }.landing-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 28px; padding-bottom: 28px; border-top: 1px solid var(--line); color: var(--muted-ink); font-size: 10px; }.landing-footer .brand-lockup { color: var(--ink); }.landing-footer > a { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); font-weight: 800; text-decoration: none; }
 @media (max-width: 900px) { .landing-hero { grid-template-columns: 1fr; padding-top: 70px; }.hero-copy { text-align: center; }.hero-copy p { margin-left: auto; margin-right: auto; }.hero-actions, .trust-row { justify-content: center; }.hero-visual { min-height: 520px; }.workflow-strip { grid-template-columns: 1fr; gap: 36px; }.feature-band { align-items: start; flex-direction: column; } }
 @media (max-width: 640px) { .landing-nav, .landing-hero, .workflow-strip, .feature-band, .landing-footer { padding-left: 20px; padding-right: 20px; }.landing-nav { height: 72px; }.nav-links { display: none; }.nav-actions { gap: 10px; }.hero-copy h1 { font-size: clamp(3.8rem, 18vw, 6rem); }.hero-copy p { font-size: 14px; }.hero-visual { min-height: 410px; margin: 0 -10px; }.schedule-window { border-radius: 10px; }.schedule-head { padding: 18px 15px 13px; }.schedule-head h2 { font-size: 15px; }.schedule-meta { gap: 8px; padding: 0 15px 14px; font-size: 7px; }.timetable { padding: 0 8px 12px; }.timetable-days, .timetable-row { grid-template-columns: 37px repeat(5, 1fr); gap: 3px; }.timetable-row { min-height: 48px; }.timetable-cell { padding: 6px 4px; }.timetable-cell strong { font-size: 6px; }.timetable-cell small { font-size: 6px; }.timetable-row time { padding-top: 15px; font-size: 7px; }.floating-stat { transform: scale(.8); }.stat-one { right: -13%; }.stat-two { left: -13%; }.label-top, .label-bottom { font-size: 7px; }.workflow-steps { grid-template-columns: 1fr; gap: 24px; }.workflow-steps > div { min-height: 85px; }.landing-footer { align-items: start; flex-direction: column; } }
+
+/* AttendEasy workspace layer */
+.app-shell { background: #f3f1ec; }
+.dark .app-shell { background: #10131a; }
+.app-grid { opacity: .55; background-image: linear-gradient(rgba(16,19,27,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(16,19,27,.045) 1px, transparent 1px); background-size: 34px 34px; mask-image: linear-gradient(to bottom, black, transparent 84%); }
+.dark .app-grid { opacity: .18; background-image: linear-gradient(rgba(244,246,248,.13) 1px, transparent 1px), linear-gradient(90deg, rgba(244,246,248,.13) 1px, transparent 1px); }
+.app-shell main { scrollbar-gutter: stable; }
+.app-shell .bg-card, .app-shell .form-section, .app-shell .stat-card { border-radius: 12px; box-shadow: 0 10px 30px rgba(16,19,27,.045); }
+.app-shell .bg-card { background: rgba(255,255,255,.78); backdrop-filter: blur(14px); }
+.dark .app-shell .bg-card { background: rgba(24,28,37,.84); }
+.app-shell .border-border { border-color: rgba(16,19,27,.12); }
+.dark .app-shell .border-border { border-color: rgba(244,246,248,.12); }
+.workspace-mark { background: var(--ink, #10131b); color: var(--paper, #f3f1ec); box-shadow: 6px 8px 0 rgba(255,114,94,.8); }
+.app-shell .sidebar-item { position: relative; border-radius: 8px; color: rgba(215,222,230,.62); transition: color .2s ease, background .2s ease, transform .2s ease; }
+.app-shell .sidebar-item:hover { color: rgba(244,246,248,.98); background: rgba(255,255,255,.06); transform: translateX(3px); }
+.app-shell .sidebar-item.active { background: #ff725e; color: #181c25; box-shadow: 4px 5px 0 rgba(201,242,109,.8); }
+.app-shell .sidebar-item.active .sidebar-item-icon { color: #181c25; }
+.app-shell .nav-group-label { letter-spacing: .18em; font-size: 9px; color: rgba(215,222,230,.34); }
+.app-shell aside { border-radius: 14px; background: rgba(17,21,29,.94); border-color: rgba(255,255,255,.1); box-shadow: 18px 24px 48px rgba(16,19,27,.18); }
+.app-shell aside .border-sidebar-border { border-color: rgba(255,255,255,.1); }
+.app-shell aside .bg-sidebar-accent { background: rgba(255,255,255,.07); }
+.app-shell aside button[style] { background: #c9f26d !important; color: #171b20 !important; border-radius: 8px; box-shadow: 3px 3px 0 rgba(255,114,94,.7); }
+.app-shell header { border-radius: 12px; background: rgba(255,255,255,.76); box-shadow: 0 8px 24px rgba(16,19,27,.05); }
+.dark .app-shell header { background: rgba(24,28,37,.82); }
+.app-shell header button, .app-shell header a { border-radius: 8px; }
+.app-shell .stat-card:hover, .app-shell .bg-card:hover { box-shadow: 0 16px 34px rgba(16,19,27,.10); transform: translateY(-2px); transition: transform .24s ease, box-shadow .24s ease; }
+.app-shell h1, .app-shell h2, .app-shell h3 { letter-spacing: -.04em; }
+.app-shell .page-container { padding-top: 1.5rem; }
+.app-shell .animate-fade-in { animation: workspace-enter .45s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes workspace-enter { from { opacity: 0; transform: translateY(12px); filter: blur(3px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
+@media (prefers-reduced-motion: reduce) { .app-shell *, .app-shell *::before, .app-shell *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

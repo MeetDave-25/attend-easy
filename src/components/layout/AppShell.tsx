@@ -48,14 +48,8 @@ const AppShell = () => {
   }, [isDarkMode]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col lg:flex-row transition-colors duration-300 relative overflow-hidden">
-      {/* Ambient Background */}
-      <div className="fixed inset-0 z-0 pointer-events-none"
-        style={{ backgroundImage: "var(--gradient-mesh)", opacity: 0.6 }} />
-      <div className="fixed top-[-15%] right-[-5%] w-[45%] h-[45%] rounded-full blur-[140px] animate-blob z-0 pointer-events-none"
-        style={{ background: "radial-gradient(circle, hsl(245,80%,58%,0.12), transparent)" }} />
-      <div className="fixed bottom-[-10%] left-[-8%] w-[35%] h-[35%] rounded-full blur-[120px] animate-blob z-0 pointer-events-none"
-        style={{ background: "radial-gradient(circle, hsl(295,70%,58%,0.10), transparent)", animationDelay: "3s" }} />
+    <div className="app-shell min-h-screen bg-background text-foreground flex flex-col lg:flex-row transition-colors duration-300 relative overflow-hidden">
+      <div className="app-grid fixed inset-0 z-0 pointer-events-none" />
 
       {/* Excel Import Modal */}
       <ExcelImportModal isOpen={importOpen} onClose={() => setImportOpen(false)} />

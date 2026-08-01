@@ -130,12 +130,12 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
         <div className="p-6 border-b border-sidebar-border/50 flex-shrink-0 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-primary/10 to-transparent opacity-50 pointer-events-none" />
           <div className="flex items-center gap-3 relative z-10">
-            <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center flex-shrink-0 shadow-lg shadow-primary/30">
+            <div className="workspace-mark w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0">
               <Calendar className="w-6 h-6 text-white" />
             </div>
             <div className="min-w-0">
               <h1 className="font-bold text-base text-sidebar-foreground leading-tight truncate">
-                Smart Timetable
+                AttendEasy
               </h1>
               <p className="text-xs text-sidebar-foreground/50 truncate">
                 {collegeConfig.collegeName}
