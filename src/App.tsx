@@ -51,7 +51,6 @@ const App = () => {
           {showSplash && (
             <ModernSplashScreen
               onComplete={handleSplashComplete}
-              brandName="AttendEasy"
             />
           )}
 
