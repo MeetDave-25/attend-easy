@@ -12,7 +12,9 @@ async function setupDatabase() {
     try {
         // Read the schema file
         const schemaPath = path.join(__dirname, 'schema.sql');
-        const schema = fs.readFileSync(schemaPath, 'utf8');
+        // Windows editors may save SQL with a UTF-8 BOM; PostgreSQL rejects it
+        // when it appears before the first statement.
+        const schema = fs.readFileSync(schemaPath, 'utf8').replace(/^\uFEFF/, '');
 
         console.log('📄 Executing schema.sql...');
         await pool.query(schema);
