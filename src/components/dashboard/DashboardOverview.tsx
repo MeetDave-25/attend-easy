@@ -88,7 +88,7 @@ const DashboardOverview = () => {
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-8">
       {/* Welcome Hero */}
-      <motion.div variants={itemVariants} className="relative overflow-hidden rounded-3xl p-8 text-white"
+      <motion.div variants={itemVariants} className="workspace-hero relative overflow-hidden rounded-3xl p-8 text-white"
         style={{ background: "linear-gradient(135deg, hsl(245,80%,50%) 0%, hsl(270,75%,55%) 50%, hsl(295,70%,55%) 100%)" }}
       >
         {/* Background orbs */}

@@ -55,7 +55,12 @@ interface SlotCandidate {
 // ============================================================
 
 const isFacultyOnLeave = (fId: string, day: string, leaves: LeaveEntry[]) =>
-  leaves.some(l => l.facultyId === fId && l.status === 'approved' && l.date === day);
+  leaves.some(l => {
+    if (l.facultyId !== fId || l.status !== 'approved') return false;
+    if (l.date === day) return true;
+    const parsed = new Date(l.date);
+    return !Number.isNaN(parsed.getTime()) && parsed.toLocaleDateString('en-US', { weekday: 'long' }) === day;
+  });
 
 const isFacultyUnavailable = (f: Faculty, slotId: string) =>
   f.unavailableSlots?.includes(slotId) ?? false;
@@ -266,8 +271,8 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
                 !hasRoomConflict(assignments, r.id, day, slot.id)
             );
 
-            // Fallback: any available room
-            if (!room) {
+            // Theory can use any available room, but labs must stay in lab rooms.
+            if (!room && subject.type !== 'lab') {
               room = classrooms.find(
                 r => r.status === 'available' && !hasRoomConflict(assignments, r.id, day, slot.id)
               );

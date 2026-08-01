@@ -550,6 +550,12 @@
 .app-shell .bg-card, .app-shell .form-section, .app-shell .stat-card { border-radius: 12px; box-shadow: 0 10px 30px rgba(16,19,27,.045); }
 .app-shell .bg-card { background: rgba(255,255,255,.78); backdrop-filter: blur(14px); }
 .dark .app-shell .bg-card { background: rgba(24,28,37,.84); }
+.app-shell .glass-card { border-radius: 12px; background: rgba(255,255,255,.72); border-color: rgba(16,19,27,.12); box-shadow: 0 10px 30px rgba(16,19,27,.05); backdrop-filter: blur(14px); }
+.dark .app-shell .glass-card { background: rgba(24,28,37,.82); border-color: rgba(244,246,248,.12); }
+.app-shell .workspace-hero { background: #171c25 !important; border: 1px solid rgba(120,215,255,.22); box-shadow: 14px 18px 0 rgba(255,114,94,.8), 0 24px 48px rgba(16,19,27,.15); }
+.app-shell .workspace-hero::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .18; background-image: linear-gradient(rgba(120,215,255,.24) 1px, transparent 1px), linear-gradient(90deg, rgba(120,215,255,.24) 1px, transparent 1px); background-size: 28px 28px; mask-image: linear-gradient(120deg, transparent, black 55%); }
+.app-shell .gradient-primary { background: #ff725e !important; color: #171c25 !important; }
+.app-shell #topbar-import { background: #c9f26d !important; color: #171c25 !important; box-shadow: 3px 3px 0 rgba(255,114,94,.75); }
 .app-shell .border-border { border-color: rgba(16,19,27,.12); }
 .dark .app-shell .border-border { border-color: rgba(244,246,248,.12); }
 .workspace-mark { background: var(--ink, #10131b); color: var(--paper, #f3f1ec); box-shadow: 6px 8px 0 rgba(255,114,94,.8); }
