@@ -44,14 +44,14 @@
     --radius: 0.75rem;
 
     /* --- Sidebar — stays dark always --- */
-    --sidebar-background: 222 47% 8%;
-    --sidebar-foreground: 215 30% 88%;
-    --sidebar-primary: 245 78% 65%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 195 70% 42%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 40% 14%;
-    --sidebar-accent-foreground: 215 30% 88%;
-    --sidebar-border: 222 40% 12%;
-    --sidebar-ring: 245 78% 65%;
+    --sidebar-accent: 220 20% 94%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 214 20% 88%;
+    --sidebar-ring: 195 70% 42%;
 
     /* --- Gradients --- */
     --gradient-primary: linear-gradient(135deg, hsl(245,80%,52%) 0%, hsl(270,75%,58%) 50%, hsl(295,70%,62%) 100%);
@@ -544,6 +544,8 @@
 /* AttendEasy workspace layer */
 .app-shell { background: #f3f1ec; }
 .dark .app-shell { background: #10131a; }
+.app-main { transition: margin-left .28s cubic-bezier(.2,.8,.2,1); }
+@media (min-width: 1024px) { html.sidebar-collapsed .app-shell .app-main { margin-left: 112px !important; } }
 .app-grid { opacity: .55; background-image: linear-gradient(rgba(16,19,27,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(16,19,27,.045) 1px, transparent 1px); background-size: 34px 34px; mask-image: linear-gradient(to bottom, black, transparent 84%); }
 .dark .app-grid { opacity: .18; background-image: linear-gradient(rgba(244,246,248,.13) 1px, transparent 1px), linear-gradient(90deg, rgba(244,246,248,.13) 1px, transparent 1px); }
 .app-shell main { scrollbar-gutter: stable; }
@@ -563,10 +565,25 @@
 .app-shell .sidebar-item:hover { color: rgba(244,246,248,.98); background: rgba(255,255,255,.06); transform: translateX(3px); }
 .app-shell .sidebar-item.active { background: rgba(120,215,255,.14); color: #f4f6f8; box-shadow: inset 3px 0 0 #78d7ff, 0 8px 20px rgba(0,0,0,.12); }
 .app-shell .sidebar-item.active .sidebar-item-icon { color: #78d7ff; }
+.app-shell aside .sidebar-item { color: rgba(16,19,27,.62); }
+.app-shell aside .sidebar-item:hover { color: rgba(16,19,27,.95); background: rgba(16,19,27,.06); }
+.app-shell aside .sidebar-item.active { color: #173743; background: rgba(120,215,255,.18); box-shadow: inset 3px 0 0 #1c9abe, 0 8px 20px rgba(16,19,27,.08); }
+.app-shell aside .sidebar-item.active .sidebar-item-icon { color: #1c7997; }
+.dark .app-shell aside .sidebar-item { color: rgba(215,222,230,.62); }
+.dark .app-shell aside .sidebar-item:hover { color: rgba(244,246,248,.98); background: rgba(255,255,255,.06); }
+.dark .app-shell aside .sidebar-item.active { color: #f4f6f8; background: rgba(120,215,255,.14); box-shadow: inset 3px 0 0 #78d7ff, 0 8px 20px rgba(0,0,0,.12); }
+.dark .app-shell aside .sidebar-item.active .sidebar-item-icon { color: #78d7ff; }
 .app-shell .nav-group-label { letter-spacing: .18em; font-size: 9px; color: rgba(215,222,230,.34); }
-.app-shell aside { border-radius: 14px; background: rgba(17,21,29,.94); border-color: rgba(255,255,255,.1); box-shadow: 18px 24px 48px rgba(16,19,27,.18); }
+.app-shell aside { border-radius: 14px; background: rgba(255,255,255,.92); border-color: rgba(16,19,27,.1); box-shadow: 18px 24px 48px rgba(16,19,27,.1); }
+.dark .app-shell aside { background: rgba(17,21,29,.94); border-color: rgba(255,255,255,.1); box-shadow: 18px 24px 48px rgba(16,19,27,.18); }
 .app-shell aside .border-sidebar-border { border-color: rgba(255,255,255,.1); }
-.app-shell aside .bg-sidebar-accent { background: rgba(255,255,255,.07); }
+.app-shell aside .bg-sidebar-accent { background: rgba(16,19,27,.06); }
+.dark .app-shell aside .bg-sidebar-accent { background: rgba(255,255,255,.07); }
+.app-shell aside .text-sidebar-foreground\/50 { color: rgba(16,19,27,.5); }
+.dark .app-shell aside .text-sidebar-foreground\/50 { color: rgba(215,222,230,.5); }
+.app-shell aside .sidebar-collapse-button { place-items: center; width: 30px; height: 30px; margin-left: auto; border: 1px solid rgba(16,19,27,.12); border-radius: 8px; background: rgba(16,19,27,.04); color: rgba(16,19,27,.58); cursor: pointer; }
+.app-shell aside .sidebar-collapse-button:hover { background: rgba(120,215,255,.16); color: #1c7997; }
+.dark .app-shell aside .sidebar-collapse-button { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.05); color: rgba(244,246,248,.7); }
 .app-shell aside button[style] { background: rgba(120,215,255,.12) !important; color: #dcebf2 !important; border: 1px solid rgba(120,215,255,.24); border-radius: 8px; box-shadow: none; }
 .app-shell header { border-radius: 12px; background: rgba(255,255,255,.76); box-shadow: 0 8px 24px rgba(16,19,27,.05); }
 .dark .app-shell header { background: rgba(24,28,37,.82); }

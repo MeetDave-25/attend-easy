@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Users, BookOpen, Building2, GraduationCap,
   Clock, Settings, Calendar, AlertTriangle, Download,
   Bell, ChevronRight, LogOut, Menu, X, Zap, UserCheck,
-  BarChart3, Search
+  BarChart3, Search, Command, PanelLeftClose, PanelLeftOpen
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTimetableStore } from "@/store/timetableStore";
@@ -69,11 +69,17 @@ const navGroups = [
 
 const Sidebar = ({ onOpenImport }: SidebarProps) => {
   const [isOpen, setIsOpen] = useState(() => window.innerWidth >= 1024);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const { currentUser, notifications, collegeConfig, toggleDarkMode, isDarkMode } = useTimetableStore();
   const location = useLocation();
   const activeTab = location.pathname.split("/")[2] || "dashboard";
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("sidebar-collapsed", isCollapsed);
+    return () => document.documentElement.classList.remove("sidebar-collapsed");
+  }, [isCollapsed]);
 
   const handleLogout = () => {
     useTimetableStore.getState().setCurrentUser(null);
@@ -119,7 +125,7 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
       {/* Sidebar */}
       <motion.aside
         initial={false}
-        animate={{ x: isOpen ? 0 : -320 }}
+        animate={{ x: isOpen ? 0 : -320, width: isCollapsed ? 88 : 280 }}
         transition={{ type: "spring", damping: 30, stiffness: 250 }}
         className={cn(
           "fixed left-0 lg:left-6 top-0 lg:top-6 h-full lg:h-[calc(100vh-3rem)] w-[280px] z-40 flex flex-col",
@@ -131,9 +137,9 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
           <div className="absolute inset-0 bg-gradient-to-r from-primary/10 to-transparent opacity-50 pointer-events-none" />
           <div className="flex items-center gap-3 relative z-10">
             <div className="workspace-mark w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0">
-              <Calendar className="w-6 h-6 text-white" />
+              <Command className="w-6 h-6" />
             </div>
-            <div className="min-w-0">
+            <div className={cn("min-w-0", isCollapsed && "lg:hidden")}>
               <h1 className="font-bold text-base text-sidebar-foreground leading-tight truncate">
                 AttendEasy
               </h1>
@@ -141,6 +147,14 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
                 {collegeConfig.collegeName}
               </p>
             </div>
+            <button
+              onClick={() => setIsCollapsed((value) => !value)}
+              className="sidebar-collapse-button hidden lg:grid"
+              title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {isCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+            </button>
           </div>
         </div>
 
@@ -148,7 +162,7 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1 scrollbar-hide">
           {filteredGroups.map((group) => (
             <div key={group.label} className="mb-3">
-              <p className="nav-group-label mb-2">{group.label}</p>
+              <p className={cn("nav-group-label mb-2", isCollapsed && "lg:hidden")}>{group.label}</p>
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const badgeCount = item.id === "notifications" ? unreadCount : undefined;
@@ -164,7 +178,7 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
                     activeClassName="active"
                   >
                     <Icon className="sidebar-item-icon" />
-                    <span className="flex-1 text-left">{item.label}</span>
+                    <span className={cn("flex-1 text-left", isCollapsed && "lg:hidden")}>{item.label}</span>
                     {badgeCount ? (
                       <span className="ml-auto px-2 py-0.5 text-xs font-bold rounded-full bg-red-500 text-white">
                         {badgeCount > 99 ? "99+" : badgeCount}
@@ -189,7 +203,7 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
               style={{ background: "linear-gradient(135deg, hsl(142,72%,28%), hsl(158,64%,34%))", color: "white" }}
             >
               <span className="text-base">📊</span>
-              <span>Import Excel Data</span>
+              <span className={isCollapsed ? "lg:hidden" : ""}>Import Excel Data</span>
             </button>
           )}
 
@@ -199,7 +213,7 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
             className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
           >
             <span className="text-base">{isDarkMode ? "☀️" : "🌙"}</span>
-            <span>{isDarkMode ? "Light Mode" : "Dark Mode"}</span>
+            <span className={isCollapsed ? "lg:hidden" : ""}>{isDarkMode ? "Light Mode" : "Dark Mode"}</span>
           </button>
 
           {/* User info */}
@@ -209,7 +223,7 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
                 {getInitials(currentUser?.name || "User")}
               </AvatarFallback>
             </Avatar>
-            <div className="flex-1 min-w-0">
+            <div className={cn("flex-1 min-w-0", isCollapsed && "lg:hidden")}>
               <p className="text-sm font-semibold text-sidebar-foreground truncate">
                 {currentUser?.name || "User"}
               </p>
