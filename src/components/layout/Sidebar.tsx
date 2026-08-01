@@ -102,7 +102,7 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
         onClick={() => setIsOpen(!isOpen)}
         id="sidebar-toggle"
         className={cn(
-          "fixed top-4 left-4 z-50 p-2.5 rounded-xl shadow-lg lg:hidden",
+          "mobile-sidebar-toggle fixed bottom-5 right-5 z-50 p-3 rounded-2xl shadow-lg lg:hidden",
           "bg-sidebar-background text-sidebar-foreground border border-sidebar-border"
         )}
       >
@@ -129,7 +129,8 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
         transition={{ type: "spring", damping: 30, stiffness: 250 }}
         className={cn(
           "fixed left-0 lg:left-6 top-0 lg:top-6 h-full lg:h-[calc(100vh-3rem)] w-[280px] z-40 flex flex-col",
-          "bg-sidebar-background/80 backdrop-blur-2xl border border-sidebar-border/50 overflow-hidden lg:rounded-3xl shadow-2xl"
+          "bg-sidebar-background/80 backdrop-blur-2xl border border-sidebar-border/50 overflow-hidden lg:rounded-3xl shadow-2xl",
+          isCollapsed && "sidebar-is-collapsed"
         )}
       >
         {/* Logo Header */}
@@ -174,7 +175,7 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
                     onClick={() => {
                       if (window.innerWidth < 1024) setIsOpen(false);
                     }}
-                    className="sidebar-item w-full mb-0.5"
+                    className={cn("sidebar-item w-full mb-0.5", isCollapsed && "lg:justify-center lg:px-0")}
                     activeClassName="active"
                   >
                     <Icon className="sidebar-item-icon" />
@@ -199,7 +200,7 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
           {onOpenImport && (
             <button
               onClick={onOpenImport}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+              className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors", isCollapsed && "lg:justify-center lg:px-0")}
               style={{ background: "linear-gradient(135deg, hsl(142,72%,28%), hsl(158,64%,34%))", color: "white" }}
             >
               <span className="text-base">📊</span>
@@ -210,7 +211,7 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
           {/* Dark mode toggle */}
           <button
             onClick={toggleDarkMode}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+            className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors", isCollapsed && "lg:justify-center lg:px-0")}
           >
             <span className="text-base">{isDarkMode ? "☀️" : "🌙"}</span>
             <span className={isCollapsed ? "lg:hidden" : ""}>{isDarkMode ? "Light Mode" : "Dark Mode"}</span>

@@ -1,0 +1,19 @@
+{
+  "name": "AttendEasy Campus Operations",
+  "short_name": "AttendEasy",
+  "description": "Modern timetable, attendance, and campus operations workspace.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#10131a",
+  "theme_color": "#171c25",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

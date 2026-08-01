@@ -584,6 +584,19 @@
 .app-shell aside .sidebar-collapse-button { place-items: center; width: 30px; height: 30px; margin-left: auto; border: 1px solid rgba(16,19,27,.12); border-radius: 8px; background: rgba(16,19,27,.04); color: rgba(16,19,27,.58); cursor: pointer; }
 .app-shell aside .sidebar-collapse-button:hover { background: rgba(120,215,255,.16); color: #1c7997; }
 .dark .app-shell aside .sidebar-collapse-button { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.05); color: rgba(244,246,248,.7); }
+.app-shell aside.sidebar-is-collapsed { box-shadow: 10px 18px 34px rgba(16,19,27,.14); }
+.app-shell aside.sidebar-is-collapsed .p-6 { padding: 14px 10px; }
+.app-shell aside.sidebar-is-collapsed .workspace-mark { width: 42px; height: 42px; border-radius: 12px; }
+.app-shell aside.sidebar-is-collapsed .sidebar-collapse-button { margin-left: 0; }
+.app-shell aside.sidebar-is-collapsed nav { padding-left: 10px; padding-right: 10px; }
+.app-shell aside.sidebar-is-collapsed .sidebar-item { min-height: 42px; margin-bottom: 5px; }
+.app-shell aside.sidebar-is-collapsed .sidebar-item .sidebar-item-icon { width: 18px; height: 18px; }
+.app-shell aside.sidebar-is-collapsed .sidebar-item.active { box-shadow: inset 3px 0 0 #1c9abe, 0 5px 14px rgba(28,154,190,.12); }
+.app-shell aside.sidebar-is-collapsed .sidebar-item svg:last-child { display: none; }
+.mobile-sidebar-toggle { background: #171c25; color: #dcebf2; border: 1px solid rgba(120,215,255,.35); box-shadow: 0 10px 24px rgba(16,19,27,.24), 0 0 0 5px rgba(120,215,255,.08); }
+.mobile-sidebar-toggle:hover { background: #25303c; }
+.dark .mobile-sidebar-toggle { background: #f3f1ec; color: #171c25; border-color: rgba(255,114,94,.45); box-shadow: 0 10px 24px rgba(0,0,0,.35), 0 0 0 5px rgba(255,114,94,.1); }
+@media (max-width: 1023px) { html.sidebar-collapsed .app-shell .app-main { margin-left: 0 !important; } }
 .app-shell aside button[style] { background: rgba(120,215,255,.12) !important; color: #dcebf2 !important; border: 1px solid rgba(120,215,255,.24); border-radius: 8px; box-shadow: none; }
 .app-shell header { border-radius: 12px; background: rgba(255,255,255,.76); box-shadow: 0 8px 24px rgba(16,19,27,.05); }
 .dark .app-shell header { background: rgba(24,28,37,.82); }
