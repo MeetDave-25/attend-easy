@@ -12,6 +12,9 @@ import {
   Command,
   Layers3,
   Moon,
+  RadioTower,
+  ScanLine,
+  Waypoints,
   Sparkles,
   Sun,
   Users,
@@ -125,6 +128,26 @@ const Landing = () => {
             <motion.div className="floating-stat stat-two" animate={{ y: [0, 7, 0] }} transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}><span className="stat-icon stat-lime"><Clock3 size={15} /></span><span><b>10× faster</b><small>than manual planning</small></span></motion.div>
           </motion.div>
           <div className="visual-label label-bottom">DRAG TO EXPLORE <span>↗</span></div>
+        </div>
+      </section>
+
+      <section className="storyline" aria-label="How AttendEasy works">
+        <div className="storyline-heading"><span className="section-kicker">THE ATTENDEASY METHOD</span><h2>One signal.<br /><span>Three movements.</span></h2><p>Watch the campus move from raw information to a living, shared rhythm.</p></div>
+        <div className="storyline-track" aria-hidden="true"><span /></div>
+        <div className="storyline-chapters">
+          {[
+            { number: "01", icon: ScanLine, label: "CAPTURE THE SIGNAL", title: "Everything enters one field.", text: "Faculty, rooms, subjects, and constraints arrive as one clear operational picture.", tone: "story-coral" },
+            { number: "02", icon: Waypoints, label: "FIND THE RHYTHM", title: "Complexity becomes a sequence.", text: "The scheduling engine finds the right place for every lecture, preference, and room.", tone: "story-cyan" },
+            { number: "03", icon: RadioTower, label: "BROADCAST THE DAY", title: "Everyone sees the same tempo.", text: "Publish a living timetable and keep every role aligned as the day changes.", tone: "story-lime" },
+          ].map((chapter, index) => {
+            const Icon = chapter.icon;
+            return (
+              <motion.article key={chapter.number} className={`story-chapter ${chapter.tone}`} initial={{ opacity: 0, y: 80, rotateX: 14, rotateY: index % 2 === 0 ? -5 : 5 }} whileInView={{ opacity: 1, y: 0, rotateX: 0, rotateY: 0 }} viewport={{ once: true, amount: .35 }} transition={{ duration: .8, delay: index * .08, ease: [0.2, 0.8, 0.2, 1] }}>
+                <div className="story-chapter-art"><div className="story-orbit orbit-large" /><div className="story-orbit orbit-small" /><div className="story-node"><Icon size={22} /></div></div>
+                <div className="story-chapter-copy"><span className="story-number">{chapter.number}</span><span className="story-label">{chapter.label}</span><h3>{chapter.title}</h3><p>{chapter.text}</p></div>
+              </motion.article>
+            );
+          })}
         </div>
       </section>
 
