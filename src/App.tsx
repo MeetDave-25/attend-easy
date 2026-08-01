@@ -9,6 +9,7 @@ import Login from "./pages/Login";
 import Landing from "./pages/Landing";
 import StudentPortal from "./pages/StudentPortal";
 import ModernSplashScreen from "./components/shared/ModernSplashScreen";
+import ErrorBoundary from "./components/shared/ErrorBoundary";
 import { useTimetableStore } from "./store/timetableStore";
 import { syncAPI } from "./lib/api";
 
@@ -110,9 +111,10 @@ const App = () => {
         );
 
         if (remoteHasData) {
+          const { collegeConfig, ...sharedData } = remote;
           useTimetableStore.getState().hydrateSharedData({
-            ...remote,
-            collegeConfig: remote.collegeConfig || undefined,
+            ...sharedData,
+            ...(collegeConfig ? { collegeConfig } : {}),
           });
         } else if (hasWorkspaceData(localState)) {
           isHydrated = true;
@@ -155,9 +157,10 @@ const App = () => {
           <Sonner />
 
           {/* Cinematic Splash Screen — only on first visit per session */}
-          <BrowserRouter>
-            <SplashGate showSplash={showSplash} onComplete={handleSplashComplete} />
-            <Routes>
+          <ErrorBoundary>
+            <BrowserRouter>
+              <SplashGate showSplash={showSplash} onComplete={handleSplashComplete} />
+              <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
               <Route
@@ -177,8 +180,9 @@ const App = () => {
                 }
               />
               <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </BrowserRouter>
+              </Routes>
+            </BrowserRouter>
+          </ErrorBoundary>
         </div>
       </TooltipProvider>
     </QueryClientProvider>

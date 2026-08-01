@@ -272,7 +272,18 @@ export const useTimetableStore = create<TimetableState>()(
       setConflicts: (conflicts) => set({ conflicts }),
       hydrateSharedData: (data) => set((state) => ({
         ...state,
-        ...data,
+        ...(data.collegeConfig ? { collegeConfig: data.collegeConfig } : {}),
+        ...(Array.isArray(data.faculty) ? { faculty: data.faculty } : {}),
+        ...(Array.isArray(data.subjects) ? { subjects: data.subjects } : {}),
+        ...(Array.isArray(data.classrooms) ? { classrooms: data.classrooms } : {}),
+        ...(Array.isArray(data.semesters) ? {
+          semesters: data.semesters.map((semester) => ({
+            ...semester,
+            divisions: Array.isArray(semester.divisions) ? semester.divisions : [],
+          })),
+        } : {}),
+        ...(Array.isArray(data.timeSlots) ? { timeSlots: data.timeSlots } : {}),
+        ...(Array.isArray(data.timetableEntries) ? { timetableEntries: data.timetableEntries } : {}),
         generationResult: null,
         conflicts: [],
       })),
