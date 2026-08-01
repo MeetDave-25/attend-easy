@@ -56,7 +56,8 @@ const ModernSplashScreen = ({ onComplete }: ModernSplashScreenProps) => {
       finished = true;
       onComplete();
     };
-    const fallbackTimer = window.setTimeout(finish, 6500);
+    // Keep a failed animation or a slow device from blocking the app.
+    const fallbackTimer = window.setTimeout(finish, 4200);
     startSound();
     const timeline = gsap.timeline({ onComplete: () => window.setTimeout(finish, 260) });
     const randomChar = () => scrambleChars[Math.floor(Math.random() * scrambleChars.length)];

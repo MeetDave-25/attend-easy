@@ -24,7 +24,8 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 const App = () => {
   // Show splash only once per session
   const [showSplash, setShowSplash] = useState(() => {
-    return !sessionStorage.getItem("splashShown");
+    // Never cover an already authenticated dashboard with the launch layer.
+    return !sessionStorage.getItem("splashShown") && !useTimetableStore.getState().currentUser;
   });
 
   const currentUserId = useTimetableStore(state => state.currentUser?.id);
