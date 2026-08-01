@@ -8,7 +8,7 @@ import AppShell from "./components/layout/AppShell";
 import Login from "./pages/Login";
 import Landing from "./pages/Landing";
 import StudentPortal from "./pages/StudentPortal";
-import SplashScreen from "./components/shared/SplashScreen";
+import ModernSplashScreen from "./components/shared/ModernSplashScreen";
 import { useTimetableStore } from "./store/timetableStore";
 
 const queryClient = new QueryClient();
@@ -49,9 +49,9 @@ const App = () => {
 
           {/* Cinematic Splash Screen — only on first visit per session */}
           {showSplash && (
-            <SplashScreen
+            <ModernSplashScreen
               onComplete={handleSplashComplete}
-              collegeName="LJCCA"
+              brandName="AttendEasy"
             />
           )}
 
