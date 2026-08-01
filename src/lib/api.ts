@@ -1,7 +1,9 @@
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { Classroom, CollegeConfig, Faculty, Semester, Subject, TimeSlot, TimetableEntry } from '@/types';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const configuredApiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '');
+// Accept either the Render origin or the full API base URL from Vercel.
+const API_URL = configuredApiUrl.endsWith('/api') ? configuredApiUrl : `${configuredApiUrl}/api`;
 
 interface ApiEnvelope<T> {
     success: boolean;
