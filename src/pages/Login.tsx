@@ -4,7 +4,7 @@ import { useTimetableStore } from "@/store/timetableStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calendar, User, Lock, ArrowRight } from "lucide-react";
+import { Calendar, User, Lock, ArrowRight, Activity, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { authAPI } from "@/lib/api";
@@ -33,24 +33,30 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background styling */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-secondary/20 -z-10" />
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-[100px] -z-10 animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-[100px] -z-10 animate-pulse delay-1000" />
+    <div className="login-page min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="login-grid absolute inset-0 -z-10" />
 
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="w-full max-w-md"
+        className="login-layout w-full max-w-5xl"
       >
+        <section className="login-pitch">
+          <div className="login-pitch-top"><span className="login-live-dot" /> LJCCA / CAMPUS OS <span>03.01</span></div>
+          <div className="login-wireframe" aria-hidden="true">
+            <div className="wireframe-ring ring-one" /><div className="wireframe-ring ring-two" /><div className="wireframe-core"><Calendar size={32} /></div>
+          </div>
+          <div className="login-pitch-copy"><p className="login-kicker">COMMAND CENTER</p><h1>Make the<br /><span>day move.</span></h1><p>One precise workspace for timetables, people, rooms, and attendance.</p></div>
+          <div className="login-signal-row"><span><Activity size={14} /> network ready</span><span><ShieldCheck size={14} /> secure access</span></div>
+        </section>
+
         <div className="glass-card rounded-3xl p-8 shadow-2xl border-border/50">
           <div className="text-center mb-8">
             <div className="w-16 h-16 rounded-2xl gradient-primary mx-auto flex items-center justify-center shadow-lg mb-4">
               <Calendar className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight mb-1">Welcome Back</h1>
+            <h1 className="text-2xl font-bold tracking-tight mb-1">Welcome back</h1>
             <p className="text-muted-foreground text-sm">
               Sign in to {collegeConfig.collegeName || "Smart Timetable System"}
             </p>
