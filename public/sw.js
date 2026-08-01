@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendeasy-shell-v1';
+const CACHE_NAME = 'attendeasy-shell-v2';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/favicon.png'];
 
 self.addEventListener('install', (event) => {

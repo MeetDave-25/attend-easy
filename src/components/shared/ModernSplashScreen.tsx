@@ -50,8 +50,15 @@ const ModernSplashScreen = ({ onComplete }: ModernSplashScreenProps) => {
 
   useEffect(() => {
     const screen = screenRef.current;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      onComplete();
+    };
+    const fallbackTimer = window.setTimeout(finish, 6500);
     startSound();
-    const timeline = gsap.timeline({ onComplete: () => window.setTimeout(onComplete, 260) });
+    const timeline = gsap.timeline({ onComplete: () => window.setTimeout(finish, 260) });
     const randomChar = () => scrambleChars[Math.floor(Math.random() * scrambleChars.length)];
     timeline.fromTo(screen, { opacity: 0 }, { opacity: 1, duration: 0.45, ease: "power2.out" });
     timeline.fromTo(".launch-kicker, .launch-subtitle", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.7, stagger: 0.08, ease: "power3.out" }, "-=0.1");
@@ -77,7 +84,7 @@ const ModernSplashScreen = ({ onComplete }: ModernSplashScreenProps) => {
     timeline.fromTo(progressRef.current, { width: "0%" }, { width: "100%", duration: 2.8, ease: "power1.inOut" }, "-=0.4");
     timeline.to(".launch-content", { opacity: 0, y: -12, duration: 0.35, ease: "power2.in" }, "+=0.12");
     timeline.to(screen, { opacity: 0, duration: 0.4, ease: "power2.in" });
-    return () => { timeline.kill(); if (audioRef.current) void audioRef.current.close(); };
+    return () => { window.clearTimeout(fallbackTimer); timeline.kill(); if (audioRef.current) void audioRef.current.close(); };
   }, [onComplete]);
 
   return (
