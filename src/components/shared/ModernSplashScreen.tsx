@@ -9,7 +9,7 @@ function getAudioContext() {
   return AudioContextClass ? new AudioContextClass() : null;
 }
 
-function playFlipSound(context: AudioContext, index: number) {
+function playFlipSound(context: AudioContext, index: number, destination: AudioNode) {
   const oscillator = context.createOscillator();
   const gain = context.createGain();
   oscillator.type = "triangle";
@@ -18,7 +18,22 @@ function playFlipSound(context: AudioContext, index: number) {
   gain.gain.setValueAtTime(0.0001, context.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.015);
   gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.24);
-  oscillator.connect(gain); gain.connect(context.destination); oscillator.start(); oscillator.stop(context.currentTime + 0.5);
+  oscillator.connect(gain); gain.connect(destination); oscillator.start(); oscillator.stop(context.currentTime + 0.5);
+}
+
+function playMusicNote(context: AudioContext, destination: AudioNode, frequency: number, duration: number, type: OscillatorType, volume: number) {
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  const now = context.currentTime;
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, now);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(volume, now + 0.025);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+  oscillator.connect(gain);
+  gain.connect(destination);
+  oscillator.start(now);
+  oscillator.stop(now + duration + 0.03);
 }
 
 const revealLetters = ["L", "J", "C", "C", "A"];
@@ -30,22 +45,79 @@ const ModernSplashScreen = ({ onComplete }: ModernSplashScreenProps) => {
   const letterRefs = useRef<(HTMLSpanElement | null)[]>([]);
   const progressRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<AudioContext | null>(null);
+  const audioBusRef = useRef<GainNode | null>(null);
+  const musicTimerRef = useRef<number | null>(null);
+  const musicStepRef = useRef(0);
   const soundOnRef = useRef(false);
+  const volumeRef = useRef(0.45);
   const [soundOn, setSoundOn] = useState(true);
+  const [volume, setVolume] = useState(0.45);
+
+  const ensureAudioBus = (context: AudioContext) => {
+    if (!audioBusRef.current) {
+      audioBusRef.current = context.createGain();
+      audioBusRef.current.gain.value = volumeRef.current;
+      audioBusRef.current.connect(context.destination);
+    }
+    return audioBusRef.current;
+  };
+
+  const playMusicStep = () => {
+    const context = audioRef.current;
+    const destination = audioBusRef.current;
+    if (!context || !destination || context.state !== "running" || !soundOnRef.current) return;
+
+    const progression = [220, 277.18, 329.63, 369.99, 440, 369.99, 329.63, 277.18];
+    const note = progression[musicStepRef.current % progression.length];
+    playMusicNote(context, destination, note, 0.32, "triangle", 0.045);
+    if (musicStepRef.current % 2 === 0) {
+      playMusicNote(context, destination, note / 2, 0.48, "sine", 0.028);
+    }
+    if (musicStepRef.current % 4 === 0) {
+      playMusicNote(context, destination, note * 2, 0.12, "square", 0.012);
+    }
+    musicStepRef.current += 1;
+  };
+
+  const startMusic = (context: AudioContext) => {
+    ensureAudioBus(context);
+    if (musicTimerRef.current !== null) return;
+    playMusicStep();
+    musicTimerRef.current = window.setInterval(playMusicStep, 360);
+  };
 
   const startSound = () => {
     try {
       if (!audioRef.current) audioRef.current = getAudioContext();
       if (!audioRef.current) return;
-      if (audioRef.current.state === "suspended") void audioRef.current.resume();
+      const context = audioRef.current;
+      ensureAudioBus(context);
       soundOnRef.current = true;
       setSoundOn(true);
+      if (context.state === "suspended") {
+        void context.resume().then(() => startMusic(context)).catch(() => undefined);
+      } else {
+        startMusic(context);
+      }
     } catch { soundOnRef.current = false; setSoundOn(false); }
   };
 
   const toggleSound = () => {
-    if (soundOn) { soundOnRef.current = false; setSoundOn(false); return; }
+    if (soundOn) {
+      soundOnRef.current = false;
+      setSoundOn(false);
+      if (audioBusRef.current) audioBusRef.current.gain.setTargetAtTime(0, audioRef.current?.currentTime || 0, 0.03);
+      return;
+    }
     startSound();
+  };
+
+  const changeVolume = (nextVolume: number) => {
+    volumeRef.current = nextVolume;
+    setVolume(nextVolume);
+    if (audioBusRef.current && soundOnRef.current) {
+      audioBusRef.current.gain.setTargetAtTime(nextVolume, audioRef.current?.currentTime || 0, 0.03);
+    }
   };
 
   useEffect(() => {
@@ -74,7 +146,7 @@ const ModernSplashScreen = ({ onComplete }: ModernSplashScreenProps) => {
         y: 0,
         duration: 0.68,
         ease: "back.out(1.5)",
-        onStart: () => { if (audioRef.current && soundOnRef.current) playFlipSound(audioRef.current, index); },
+        onStart: () => { if (audioRef.current && audioBusRef.current && soundOnRef.current) playFlipSound(audioRef.current, index, audioBusRef.current); },
         onUpdate: function () {
           if (this.progress() < 0.72) letter.textContent = randomChar();
           else letter.textContent = revealLetters[index];
@@ -85,7 +157,13 @@ const ModernSplashScreen = ({ onComplete }: ModernSplashScreenProps) => {
     timeline.fromTo(progressRef.current, { width: "0%" }, { width: "100%", duration: 2.8, ease: "power1.inOut" }, "-=0.4");
     timeline.to(".launch-content", { opacity: 0, y: -12, duration: 0.35, ease: "power2.in" }, "+=0.12");
     timeline.to(screen, { opacity: 0, duration: 0.4, ease: "power2.in" });
-    return () => { window.clearTimeout(fallbackTimer); timeline.kill(); if (audioRef.current) void audioRef.current.close(); };
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      timeline.kill();
+      if (musicTimerRef.current !== null) window.clearInterval(musicTimerRef.current);
+      musicTimerRef.current = null;
+      if (audioRef.current) void audioRef.current.close();
+    };
   }, [onComplete]);
 
   return (
@@ -99,7 +177,13 @@ const ModernSplashScreen = ({ onComplete }: ModernSplashScreenProps) => {
         <rect width="1440" height="900" fill="url(#launch-grid)" /><circle cx="1050" cy="220" r="330" fill="url(#launch-light)" />
         <path d="M-80 730C250 530 330 840 690 570S1130 350 1530 520" fill="none" stroke="url(#launch-line)" strokeWidth="1" /><path d="M-80 770C250 570 350 870 720 610S1160 390 1530 560" fill="none" stroke="url(#launch-line)" strokeOpacity=".35" />
       </svg>
-      <button className="launch-sound" onClick={toggleSound} title={soundOn ? "Mute launch sound" : "Enable launch sound"} aria-label={soundOn ? "Mute launch sound" : "Enable launch sound"}>{soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />}<span>{soundOn ? "sound on" : "sound off"}</span></button>
+      <div className="launch-audio-controls" onPointerDown={event => event.stopPropagation()}>
+        <button className="launch-sound" onClick={toggleSound} title={soundOn ? "Mute launch music" : "Enable launch music"} aria-label={soundOn ? "Mute launch music" : "Enable launch music"}>{soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />}<span>{soundOn ? "music on" : "music off"}</span></button>
+        <label className="launch-volume" title="Loading music volume">
+          <span className="sr-only">Loading music volume</span>
+          <input type="range" min="0" max="1" step="0.01" value={volume} onChange={event => { startSound(); changeVolume(Number(event.target.value)); }} aria-label="Loading music volume" />
+        </label>
+      </div>
       <div className="launch-content">
         <div className="launch-kicker"><span /> SYSTEM ONLINE <span /></div>
         <div className="launch-art" aria-hidden="true">
