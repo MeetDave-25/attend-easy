@@ -1,35 +1,37 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTimetableStore } from "@/store/timetableStore";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, Printer } from "lucide-react";
 import TimetableGrid from "./TimetableGrid";
 import { downloadTimetableCsv } from "@/lib/timetableExport";
 
 const TimetableViews = () => {
-  const { 
-    timetableEntries, semesters, faculty, subjects, classrooms, collegeConfig,
-    activeView, setActiveView, selectedSemesterId, setSelectedSemester, 
-    selectedDivisionId, setSelectedDivision 
+  const {
+    timetableEntries, semesters, faculty, subjects, classrooms,
+    activeView, setActiveView, selectedSemesterId, setSelectedSemester,
+    selectedDivisionId, setSelectedDivision,
   } = useTimetableStore();
+  const [selectedFacultyId, setSelectedFacultyId] = useState("all");
 
-  const [selectedFacultyId, setSelectedFacultyId] = useState<string>("all");
-  const [selectedRoomId, setSelectedRoomId] = useState<string>("all");
+  // Older saved state could contain the removed room/master tabs.
+  useEffect(() => {
+    if (activeView !== "student" && activeView !== "faculty") setActiveView("faculty");
+  }, [activeView, setActiveView]);
 
-  const selectedSem = semesters.find(s => s.id === selectedSemesterId);
+  const visibleSemesters = useMemo(() => {
+    if (selectedSemesterId === "all" || !selectedSemesterId) return semesters;
+    return semesters.filter(semester => semester.id === selectedSemesterId);
+  }, [semesters, selectedSemesterId]);
 
-  // Initialize selections if empty
-  if (!selectedSemesterId && semesters.length > 0) {
-    setSelectedSemester(semesters[0].id);
-    if (semesters[0].divisions.length > 0) {
-      setSelectedDivision(semesters[0].divisions[0].id);
+  const selectedSemester = semesters.find(semester => semester.id === selectedSemesterId);
+
+  useEffect(() => {
+    if (selectedSemesterId && selectedSemesterId !== "all" && !selectedSemester) {
+      setSelectedSemester("all");
+      setSelectedDivision("all");
     }
-  }
-
-  const handlePrint = () => {
-    window.print();
-  };
+  }, [selectedSemesterId, selectedSemester, setSelectedSemester, setSelectedDivision]);
 
   if (timetableEntries.length === 0) {
     return (
@@ -40,99 +42,100 @@ const TimetableViews = () => {
     );
   }
 
+  const renderSemesterSections = (viewType: "faculty" | "student") => (
+    <div className="space-y-6">
+      {visibleSemesters.length === 0 ? (
+        <div className="p-10 text-center text-muted-foreground">No timetable data for this semester.</div>
+      ) : visibleSemesters.map(semester => (
+        <section key={semester.id} className="rounded-2xl border border-border overflow-hidden bg-card">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-5 py-4 bg-secondary/30 border-b border-border">
+            <div>
+              <h3 className="font-bold text-lg">Year {semester.year} · Semester {semester.number}</h3>
+              <p className="text-xs text-muted-foreground">{semester.divisions.length} division{semester.divisions.length === 1 ? "" : "s"} · separate schedule</p>
+            </div>
+            {viewType === "faculty" && selectedFacultyId !== "all" && (
+              <span className="text-sm text-muted-foreground">Filtered faculty schedule</span>
+            )}
+          </div>
+          <TimetableGrid
+            viewType={viewType}
+            filterId={viewType === "student" ? `${semester.id}__${selectedDivisionId || "all"}` : selectedFacultyId}
+            semesterFilterId={semester.id}
+          />
+        </section>
+      ))}
+    </div>
+  );
+
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <div>
           <h2 className="section-title">Timetable Viewer</h2>
-          <p className="section-subtitle">View and print schedules from multiple perspectives.</p>
+          <p className="section-subtitle">Choose a semester to see only its subjects, or view every semester in separate sections.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={() => downloadTimetableCsv(timetableEntries, subjects, faculty, classrooms, semesters)} variant="outline" className="gap-2">
             <Download className="w-4 h-4" /> Download CSV
           </Button>
-          <Button onClick={handlePrint} variant="outline" className="gap-2">
-            <Download className="w-4 h-4" /> Print / PDF
+          <Button onClick={() => window.print()} variant="outline" className="gap-2">
+            <Printer className="w-4 h-4" /> Print / PDF
           </Button>
         </div>
       </div>
 
-      <div className="glass-card p-4 rounded-2xl">
-        <Tabs value={activeView} onValueChange={setActiveView} className="w-full">
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
-            <TabsList className="bg-muted/50 p-1">
-              <TabsTrigger value="student">Student View</TabsTrigger>
-              <TabsTrigger value="faculty">Faculty View</TabsTrigger>
-              <TabsTrigger value="room">Room View</TabsTrigger>
-              <TabsTrigger value="master">Master View</TabsTrigger>
-            </TabsList>
+      <div className="glass-card p-4 rounded-2xl space-y-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label className="space-y-2 text-sm font-medium">
+            <span>Semester</span>
+            <select
+              value={selectedSemesterId || "all"}
+              onChange={event => { setSelectedSemester(event.target.value); setSelectedDivision("all"); }}
+              className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm"
+            >
+              <option value="all">All semesters · separate sections</option>
+              {semesters.map(semester => <option key={semester.id} value={semester.id}>Year {semester.year} · Semester {semester.number}</option>)}
+            </select>
+          </label>
 
-            <div className="flex flex-wrap gap-3">
-              {activeView === "student" && (
-                <>
-                  <Select value={selectedSemesterId} onValueChange={setSelectedSemester}>
-                    <SelectTrigger className="w-[160px] bg-background"><SelectValue placeholder="Semester" /></SelectTrigger>
-                    <SelectContent>
-                      {semesters.map(s => <SelectItem key={s.id} value={s.id}>Semester {s.number}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <Select value={selectedDivisionId} onValueChange={setSelectedDivision}>
-                    <SelectTrigger className="w-[120px] bg-background"><SelectValue placeholder="Division" /></SelectTrigger>
-                    <SelectContent>
-                      {selectedSem?.divisions.map(d => <SelectItem key={d.id} value={d.id}>Div {d.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </>
-              )}
+          {activeView === "student" ? (
+            <label className="space-y-2 text-sm font-medium">
+              <span>Division</span>
+              <select
+                value={selectedDivisionId || "all"}
+                onChange={event => setSelectedDivision(event.target.value)}
+                className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm"
+              >
+                <option value="all">All divisions</option>
+                {selectedSemester?.divisions.map(division => <option key={division.id} value={division.id}>Division {division.name}</option>)}
+              </select>
+            </label>
+          ) : (
+            <label className="space-y-2 text-sm font-medium">
+              <span>Faculty filter</span>
+              <select value={selectedFacultyId} onChange={event => setSelectedFacultyId(event.target.value)} className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm">
+                <option value="all">All faculty · complete details</option>
+                {faculty.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
+              </select>
+            </label>
+          )}
 
-              {activeView === "faculty" && (
-                <Select value={selectedFacultyId} onValueChange={setSelectedFacultyId}>
-                  <SelectTrigger className="w-[200px] bg-background"><SelectValue placeholder="Select Faculty" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Faculty</SelectItem>
-                    {faculty.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              )}
-
-              {activeView === "room" && (
-                <Select value={selectedRoomId} onValueChange={setSelectedRoomId}>
-                  <SelectTrigger className="w-[160px] bg-background"><SelectValue placeholder="Select Room" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Rooms</SelectItem>
-                    {classrooms.map(r => <SelectItem key={r.id} value={r.id}>{r.roomNumber}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
+          <div className="flex items-end text-sm text-muted-foreground rounded-xl bg-secondary/30 px-3 py-2">
+            {visibleSemesters.length} semester{visibleSemesters.length === 1 ? "" : "s"} shown separately
           </div>
+        </div>
 
-          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-            <TabsContent value="student" className="m-0 border-none outline-none">
-              <TimetableGrid 
-                viewType="student" 
-                filterId={`${selectedSemesterId}__${selectedDivisionId}`} 
-              />
-            </TabsContent>
-            
-            <TabsContent value="faculty" className="m-0 border-none outline-none">
-              <TimetableGrid 
-                viewType="faculty" 
-                filterId={selectedFacultyId} 
-              />
-            </TabsContent>
-
-            <TabsContent value="room" className="m-0 border-none outline-none">
-              <TimetableGrid 
-                viewType="room" 
-                filterId={selectedRoomId} 
-              />
-            </TabsContent>
-            
-            <TabsContent value="master" className="m-0 border-none outline-none p-8 text-center text-muted-foreground">
-              Master view requires a larger screen or horizontal scrolling. Not implemented in this preview.
-            </TabsContent>
-          </div>
+        <Tabs value={activeView === "student" ? "student" : "faculty"} onValueChange={setActiveView} className="w-full">
+          <TabsList className="bg-muted/50 p-1">
+            <TabsTrigger value="faculty">Faculty / Admin View</TabsTrigger>
+            <TabsTrigger value="student">Student View</TabsTrigger>
+          </TabsList>
+          <TabsContent value="faculty" className="mt-5">
+            {renderSemesterSections("faculty")}
+          </TabsContent>
+          <TabsContent value="student" className="mt-5">
+            {renderSemesterSections("student")}
+          </TabsContent>
         </Tabs>
       </div>
     </div>

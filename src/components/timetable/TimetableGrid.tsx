@@ -6,12 +6,13 @@ import CellDetailModal from "./CellDetailModal";
 import { formatTime } from "@/lib/utils";
 
 interface TimetableGridProps {
-  viewType: 'student' | 'faculty' | 'room';
-  filterId: string; // semId__divId, facultyId, roomId
+  viewType: 'student' | 'faculty';
+  filterId: string; // semId__divId for students, facultyId or all for faculty
+  semesterFilterId?: string;
 }
 
-const TimetableGrid = ({ viewType, filterId }: TimetableGridProps) => {
-  const { timetableEntries, timeSlots, collegeConfig, subjects, faculty, classrooms } = useTimetableStore();
+const TimetableGrid = ({ viewType, filterId, semesterFilterId = 'all' }: TimetableGridProps) => {
+  const { timetableEntries, timeSlots, collegeConfig, subjects, faculty, classrooms, semesters } = useTimetableStore();
   const [selectedCell, setSelectedCell] = useState<TimetableEntry | null>(null);
 
   // Group and sort time slots
@@ -30,14 +31,14 @@ const TimetableGrid = ({ viewType, filterId }: TimetableGridProps) => {
     .sort((a, b) => a.order - b.order || a.startTime.localeCompare(b.startTime));
 
   // Filter entries based on view type
-  let filteredEntries = timetableEntries;
+  let filteredEntries = semesterFilterId !== 'all'
+    ? timetableEntries.filter(entry => entry.semesterId === semesterFilterId)
+    : timetableEntries;
   if (viewType === 'student' && filterId && filterId.includes('__')) {
     const [semId, divId] = filterId.split('__');
-    filteredEntries = timetableEntries.filter(e => e.semesterId === semId && e.divisionId === divId);
+    filteredEntries = filteredEntries.filter(e => e.semesterId === semId && (divId === 'all' || e.divisionId === divId));
   } else if (viewType === 'faculty' && filterId !== 'all') {
-    filteredEntries = timetableEntries.filter(e => e.facultyId === filterId);
-  } else if (viewType === 'room' && filterId !== 'all') {
-    filteredEntries = timetableEntries.filter(e => e.classroomId === filterId);
+    filteredEntries = filteredEntries.filter(e => e.facultyId === filterId);
   }
 
   // Generate grid cells
@@ -106,9 +107,14 @@ const TimetableGrid = ({ viewType, filterId }: TimetableGridProps) => {
                             const subject = subjects.find(s => s.id === entry.subjectId);
                             const fac = faculty.find(f => f.id === entry.facultyId);
                             const room = classrooms.find(r => r.id === entry.classroomId);
+                            const semester = semesters.find(s => s.id === entry.semesterId);
+                            const division = semester?.divisions.find(d => d.id === entry.divisionId);
                             
                             const typeConfig = subject ? SUBJECT_TYPES[subject.type as keyof typeof SUBJECT_TYPES] : SUBJECT_TYPES.theory;
-                            const isConflict = cellData.entries.length > 1;
+                            // Several lectures in one cell are normal in the
+                            // faculty/admin overview because different classes
+                            // can run at the same time.
+                            const isConflict = viewType === 'student' && cellData.entries.length > 1;
 
                             return (
                               <div 
@@ -124,10 +130,17 @@ const TimetableGrid = ({ viewType, filterId }: TimetableGridProps) => {
                                 )}
                                 
                                 <p className="font-bold leading-tight mb-1">{subject?.name || 'Unknown'}</p>
-                                <div className="text-xs opacity-90 space-y-0.5 font-medium">
-                                  {viewType !== 'faculty' && <p>{fac?.name || 'No Faculty'}</p>}
-                                  {viewType !== 'room' && <p>{room?.roomNumber || 'No Room'}</p>}
-                                </div>
+                                {viewType === 'faculty' ? (
+                                  <div className="text-xs opacity-90 space-y-0.5 font-medium">
+                                    <p>{fac?.name || 'No Faculty'}</p>
+                                    <p>Year {semester?.year || '-'} · Sem {semester?.number || '-'} · Div {division?.name || '-'}</p>
+                                    <p>Room {room?.roomNumber || 'Unassigned'}</p>
+                                  </div>
+                                ) : (
+                                  <div className="text-xs opacity-90 font-semibold">
+                                    <p className="text-sm">Room {room?.roomNumber || 'Unassigned'}</p>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

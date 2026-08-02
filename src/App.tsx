@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import AppShell from "./components/layout/AppShell";
 import Login from "./pages/Login";
 import Landing from "./pages/Landing";
@@ -24,17 +24,14 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const SplashGate = ({ showSplash, onComplete }: { showSplash: boolean; onComplete: () => void }) => {
-  const location = useLocation();
-  if (!showSplash || location.pathname !== "/") return null;
+  if (!showSplash) return null;
   return <ModernSplashScreen onComplete={onComplete} />;
 };
 
 const App = () => {
-  // Show splash only once per session
-  const [showSplash, setShowSplash] = useState(() => {
-    // Never cover an already authenticated dashboard with the launch layer.
-    return !sessionStorage.getItem("splashShown") && !useTimetableStore.getState().currentUser;
-  });
+  // Show the launch screen on every full page load, including authenticated
+  // dashboard reloads and direct links to /app or /student.
+  const [showSplash, setShowSplash] = useState(true);
 
   const currentUserId = useTimetableStore(state => state.currentUser?.id);
 
@@ -155,7 +152,6 @@ const App = () => {
   }, [currentUserId]);
 
   const handleSplashComplete = () => {
-    sessionStorage.setItem("splashShown", "true");
     setShowSplash(false);
   };
 
@@ -166,7 +162,7 @@ const App = () => {
           <Toaster />
           <Sonner />
 
-          {/* Cinematic Splash Screen — only on first visit per session */}
+          {/* Cinematic Splash Screen — shown on every full page load */}
           <ErrorBoundary>
             <BrowserRouter>
               <SplashGate showSplash={showSplash} onComplete={handleSplashComplete} />
