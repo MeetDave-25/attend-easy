@@ -1,9 +1,18 @@
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { Classroom, CollegeConfig, Faculty, Semester, Subject, TimeSlot, TimetableEntry } from '@/types';
 
-const configuredApiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '');
+const rawApiUrl = (import.meta.env.VITE_API_URL || '').trim();
+const defaultApiOrigin = import.meta.env.DEV ? 'http://localhost:3000' : window.location.origin;
+const configuredApiUrl = (rawApiUrl || defaultApiOrigin).replace(/\/$/, '');
+const isPlaceholderApiUrl = /your-api-domain\.com|your-render-service|example\.com/i.test(configuredApiUrl);
 // Accept either the Render origin or the full API base URL from Vercel.
 const API_URL = configuredApiUrl.endsWith('/api') ? configuredApiUrl : `${configuredApiUrl}/api`;
+
+const assertApiConfigured = () => {
+    if (isPlaceholderApiUrl) {
+        throw new Error('VITE_API_URL still uses a placeholder. Set it to your deployed backend URL, for example https://your-service.onrender.com/api.');
+    }
+};
 
 interface ApiEnvelope<T> {
     success: boolean;
@@ -19,6 +28,11 @@ const api = axios.create({
         'Content-Type': 'application/json',
     },
     timeout: 10000,
+});
+
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+    assertApiConfigured();
+    return config;
 });
 
 // Request interceptor to add auth token
@@ -118,6 +132,8 @@ export const studentsAPI = {
         name: string;
         rollNumber: string;
         year: number;
+        semester?: number;
+        division?: string;
         email: string;
     }) => {
         return api.post('/students', data);
@@ -127,6 +143,8 @@ export const studentsAPI = {
         name: string;
         rollNumber: string;
         year: number;
+        semester: number;
+        division: string;
         email: string;
     }>) => {
         return api.put(`/students/${id}`, data);

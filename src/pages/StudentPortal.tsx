@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
@@ -15,18 +15,20 @@ import {
 import { Button } from "@/components/ui/button";
 import QRScanner from "@/components/student/QRScanner";
 import { cn } from "@/lib/utils";
-import { authAPI, attendanceAPI } from "@/lib/api";
+import { authAPI, attendanceAPI, studentsAPI } from "@/lib/api";
 import { useTimetableStore } from "@/store/timetableStore";
 
 type View = "home" | "scan" | "attendance" | "schedule";
 
-// Mock student data
-const mockStudent = {
-  name: "John Doe",
-  rollNumber: "2024CS001",
-  year: 2,
-  email: "john@college.edu",
-};
+interface StudentProfile {
+  id: string;
+  name: string;
+  rollNumber: string;
+  year: number;
+  semester?: number;
+  division?: string;
+  email: string;
+}
 
 const mockAttendance = [
   { subject: "Data Structures", code: "CS201", percentage: 85, classes: 17, total: 20 },
@@ -35,19 +37,104 @@ const mockAttendance = [
   { subject: "Operating Systems", code: "CS401", percentage: 80, classes: 16, total: 20 },
 ];
 
-const mockSchedule = [
-  { time: "09:00", subject: "Data Structures", room: "CS Lab 1" },
-  { time: "10:00", subject: "Algorithms", room: "Room 201" },
-  { time: "11:00", subject: "Break", room: "-" },
-  { time: "11:30", subject: "Database Systems", room: "Room 102" },
-  { time: "12:30", subject: "Lunch", room: "-" },
-  { time: "14:00", subject: "Operating Systems", room: "Room 301" },
-];
-
 const StudentPortal = () => {
   const [currentView, setCurrentView] = useState<View>("home");
   const [markedSessions, setMarkedSessions] = useState<string[]>([]);
-  const { setCurrentUser } = useTimetableStore();
+  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const {
+    setCurrentUser, currentUser, timetableEntries, subjects, classrooms,
+    semesters, timeSlots, collegeConfig,
+  } = useTimetableStore();
+  const authUser = currentUser || authAPI.getCurrentUser();
+  const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
+  const [selectedDay, setSelectedDay] = useState(todayName);
+
+  useEffect(() => {
+    let isActive = true;
+    if (!authUser?.studentId) {
+      setStudentProfile(null);
+      setProfileError("Your account is not linked to a student profile yet.");
+      return () => { isActive = false; };
+    }
+
+    void studentsAPI.getById(authUser.studentId)
+      .then((response: any) => {
+        if (!isActive) return;
+        const student = response.data;
+        setStudentProfile({
+          id: student.id,
+          name: student.name,
+          rollNumber: student.rollNumber || student.roll_number,
+          year: student.year,
+          semester: student.semester,
+          division: student.division,
+          email: student.email,
+        });
+        setProfileError(null);
+      })
+      .catch(() => {
+        if (isActive) setProfileError("Unable to load your student profile.");
+      });
+
+    return () => { isActive = false; };
+  }, [authUser?.studentId]);
+
+  const availableDays = useMemo(() => {
+    const configured = collegeConfig.workingDays.filter((day) => timeSlots.some((slot) => slot.day === day));
+    return configured.length > 0 ? configured : Array.from(new Set(timeSlots.map((slot) => slot.day)));
+  }, [collegeConfig.workingDays, timeSlots]);
+
+  useEffect(() => {
+    if (availableDays.length > 0 && !availableDays.includes(selectedDay)) {
+      setSelectedDay(availableDays.includes(todayName) ? todayName : availableDays[0]);
+    }
+  }, [availableDays, selectedDay, todayName]);
+
+  const studentSemester = useMemo(() => {
+    if (!studentProfile) return undefined;
+    const semesterNumber = studentProfile.semester || semesters.find((semester) => semester.year === studentProfile.year)?.number;
+    return semesters.find((semester) => semester.number === semesterNumber);
+  }, [studentProfile, semesters]);
+
+  const studentDivision = studentSemester?.divisions.find((division) => division.name === studentProfile?.division)
+    || studentSemester?.divisions[0];
+
+  const daySlots = useMemo(() => timeSlots
+    .filter((slot) => slot.day === selectedDay)
+    .sort((left, right) => left.order - right.order || left.startTime.localeCompare(right.startTime)), [timeSlots, selectedDay]);
+
+  const liveEntries = useMemo(() => timetableEntries.filter((entry) =>
+    entry.semesterId === studentSemester?.id &&
+    entry.divisionId === studentDivision?.id &&
+    entry.day === selectedDay
+  ), [timetableEntries, studentSemester?.id, studentDivision?.id, selectedDay]);
+
+  const todayEntries = useMemo(() => timetableEntries.filter((entry) =>
+    entry.semesterId === studentSemester?.id &&
+    entry.divisionId === studentDivision?.id &&
+    entry.day === todayName
+  ).sort((left, right) => left.startTime.localeCompare(right.startTime)), [timetableEntries, studentSemester?.id, studentDivision?.id, todayName]);
+
+  const nextClass = todayEntries.find((entry) => {
+    const [hour, minute] = entry.endTime.split(":").map(Number);
+    return hour * 60 + minute >= new Date().getHours() * 60 + new Date().getMinutes();
+  }) || todayEntries[0];
+  const mockStudent = {
+    rollNumber: studentProfile?.rollNumber || "Profile loading",
+    year: studentProfile?.year || "—",
+  };
+  const mockSchedule = daySlots.map((slot) => {
+    const entry = liveEntries.find((item) => item.timeSlotId === slot.id);
+    const subject = subjects.find((item) => item.id === entry?.subjectId);
+    const room = classrooms.find((item) => item.id === entry?.classroomId);
+    const isBreak = slot.slotType === "break" || slot.slotType === "lunch";
+    return {
+      time: slot.startTime,
+      subject: isBreak ? (slot.slotType === "lunch" ? "Lunch" : "Break") : subject?.name || "No class",
+      room: room?.roomNumber ? `Room ${room.roomNumber}` : "—",
+    };
+  });
 
   const handleAttendanceMarked = async (sessionData: any, location: GeolocationCoordinates) => {
     try {
@@ -113,7 +200,7 @@ const StudentPortal = () => {
           </div>
           <div>
             <p className="text-sm opacity-80">Welcome back,</p>
-            <h1 className="text-2xl font-bold">{mockStudent.name}</h1>
+            <h1 className="text-2xl font-bold">{studentProfile?.name || authUser?.name || "Student"}</h1>
             <p className="text-sm opacity-80">
               {mockStudent.rollNumber} • Year {mockStudent.year}
             </p>
@@ -139,7 +226,7 @@ const StudentPortal = () => {
           className="p-4 rounded-xl bg-card shadow-card"
         >
           <p className="text-sm text-muted-foreground">Today's Classes</p>
-          <p className="text-3xl font-bold text-primary">4</p>
+          <p className="text-3xl font-bold text-primary">{todayEntries.length}</p>
         </motion.div>
       </div>
 
@@ -178,8 +265,15 @@ const StudentPortal = () => {
         <p className="text-sm text-muted-foreground mb-2">Next Class</p>
         <div className="flex items-center justify-between">
           <div>
-            <p className="font-semibold">Data Structures</p>
+            <p className="font-semibold">{nextClass ? subjects.find((subject) => subject.id === nextClass.subjectId)?.name : "No class scheduled"}</p>
+            {/*
             <p className="text-sm text-muted-foreground">CS Lab 1 • 09:00 AM</p>
+            */}
+            <p className="text-sm text-muted-foreground">
+              {nextClass
+                ? `${classrooms.find((room) => room.id === nextClass.classroomId)?.roomNumber || "Room —"} • ${nextClass.startTime}`
+                : "Your timetable updates automatically when the college updates it."}
+            </p>
           </div>
           <Button
             size="sm"
@@ -296,6 +390,27 @@ const StudentPortal = () => {
           </p>
         </div>
       </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {availableDays.map((day) => (
+          <Button
+            key={day}
+            type="button"
+            size="sm"
+            variant={selectedDay === day ? "gradient" : "outline"}
+            onClick={() => setSelectedDay(day)}
+            className="shrink-0"
+          >
+            {day.slice(0, 3)}
+          </Button>
+        ))}
+      </div>
+
+      {profileError ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
+          {profileError} Ask the administrator to set your semester and division in your student profile.
+        </div>
+      ) : null}
 
       <div className="space-y-3">
         {mockSchedule.map((slot, index) => {

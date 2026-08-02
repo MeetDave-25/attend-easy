@@ -76,7 +76,7 @@ router.get('/:id', async (req, res) => {
 // Create new student
 router.post('/', async (req, res) => {
     try {
-        const { name, rollNumber, year, email } = req.body;
+        const { name, rollNumber, year, semester, division, email } = req.body;
 
         // Validation
         if (!name || !rollNumber || !year || !email) {
@@ -90,10 +90,10 @@ router.post('/', async (req, res) => {
         }
 
         const result = await query(
-            `INSERT INTO students (name, roll_number, year, email) 
-       VALUES ($1, $2, $3, $4) 
+            `INSERT INTO students (name, roll_number, year, semester, division, email)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-            [name, rollNumber, year, email]
+            [name, rollNumber, year, semester || null, division || null, email]
         );
 
         res.status(201).json({
@@ -128,18 +128,20 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, rollNumber, year, email } = req.body;
+        const { name, rollNumber, year, semester, division, email } = req.body;
 
         const result = await query(
             `UPDATE students 
        SET name = COALESCE($1, name),
            roll_number = COALESCE($2, roll_number),
            year = COALESCE($3, year),
-           email = COALESCE($4, email),
+           semester = COALESCE($4, semester),
+           division = COALESCE($5, division),
+           email = COALESCE($6, email),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5
+       WHERE id = $7
        RETURNING *`,
-            [name, rollNumber, year, email, id]
+            [name, rollNumber, year, semester, division, email, id]
         );
 
         if (result.rowCount === 0) {

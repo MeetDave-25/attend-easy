@@ -108,6 +108,21 @@ const getDivisionDailyLimit = (config: CollegeConfig, availableSlots: number) =>
 const getSubjectWeeklyCount = (assignments: Assignment[], subjectId: string, divId: string) =>
   assignments.filter(a => a.subjectId === subjectId && a.divisionId === divId).length;
 
+const getSubjectAssignments = (assignments: Assignment[], subjectId: string, divId: string) =>
+  assignments.filter(a => a.subjectId === subjectId && a.divisionId === divId);
+
+const stableHash = (value: string) => {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+};
+
+const circularDistance = (left: number, right: number, size: number) =>
+  Math.min(Math.abs(left - right), size - Math.abs(left - right));
+
 const isDuringLunch = (slot: TimeSlot, config: CollegeConfig) => {
   const s = timeToMinutes(slot.startTime);
   const e = timeToMinutes(slot.endTime);
@@ -131,8 +146,8 @@ function scoreCandidate(
   const { slot, faculty } = candidate;
   const day = slot.day;
 
-  // Prefer earlier slots in the day (order)
-  score -= slot.order * 2;
+  // Do not always favor the first lecture. Subject-specific distribution
+  // is applied below so lectures rotate through the available time slots.
 
   // Penalize if faculty is approaching daily limit
   const dailyCount = getFacultyDailyCount(assignments, faculty.id, day);
@@ -380,8 +395,32 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
 
             const candidate: SlotCandidate = { slot, faculty: fac, classroom: room, score: 0 };
             candidate.score = scoreCandidate(candidate, assignments, config);
+
+            const subjectAssignments = getSubjectAssignments(assignments, task.subject.id, task.divisionId);
+            const dailySlots = slotsByDay[day] || [];
+            const slotIndex = dailySlots.findIndex(item => item.id === slot.id);
+            const dayIndex = config.workingDays.indexOf(day);
+            const subjectSeed = stableHash(`${task.subject.id}:${task.divisionId}`);
+            // Shift the preferred position every day. For example, a subject
+            // that lands in slot 2 on Monday is naturally encouraged toward a
+            // different slot on Tuesday instead of repeating slot 1 all week.
+            const desiredSlotIndex = dailySlots.length > 0
+              ? (subjectSeed + dayIndex * 2) % dailySlots.length
+              : 0;
+            const sameTimeUses = subjectAssignments.filter(assignment =>
+              assignment.startTime === slot.startTime && assignment.endTime === slot.endTime
+            ).length;
+
+            // Strongly prefer one lecture per subject per day when possible.
+            // The candidate is kept as a fallback for subjects that genuinely
+            // need more lectures than the number of working days.
             if (hasSameSubjectSameDay(assignments, task.subject.id, task.divisionId, day)) {
-              candidate.score -= 20;
+              candidate.score -= 90;
+            }
+            // Avoid repeating the same time position across different days.
+            candidate.score -= sameTimeUses * 70;
+            if (slotIndex >= 0 && dailySlots.length > 1) {
+              candidate.score -= circularDistance(slotIndex, desiredSlotIndex, dailySlots.length) * 8;
             }
             candidates.push(candidate);
           }

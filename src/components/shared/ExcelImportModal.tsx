@@ -88,11 +88,12 @@ const TEMPLATES: Record<ImportMode, { headers: string[]; sample: Record<string, 
     ],
   },
   subjects: {
-    headers: ["Name", "Code", "Semester", "Division", "Type", "Lectures Per Week", "Theory Hours", "Lab Hours", "Credits"],
+    headers: ["Name", "Code", "Year", "Semester", "Division", "Type", "Lectures Per Week", "Theory Hours", "Lab Hours", "Credits"],
     sample: [
       {
         Name: "Data Structures",
         Code: "CS301",
+        Year: "2",
         Semester: "3",
         Division: "A",
         Type: "theory",
@@ -104,6 +105,7 @@ const TEMPLATES: Record<ImportMode, { headers: string[]; sample: Record<string, 
       {
         Name: "Data Structures Lab",
         Code: "CS302",
+        Year: "2",
         Semester: "3",
         Division: "A",
         Type: "lab",
@@ -237,6 +239,7 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
           return {
             name: readCell(r, ["Name", "Subject Name"]),
             code: readCell(r, ["Code", "Subject Code"], `IMPORTED-${importStamp}-${index + 1}`),
+            year: readNumber(r, ["Year", "Academic Year"], Math.ceil(readNumber(r, ["Semester", "Semester Number", "Sem"], 1) / 2)),
             semester: readNumber(r, ["Semester", "Semester Number", "Sem"], 1),
             division: readCell(r, ["Division", "Div"], "All"),
             type,

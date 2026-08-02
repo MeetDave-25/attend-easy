@@ -21,14 +21,13 @@ const TimetableGeneratorV2 = () => {
 
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
-  const [selectedSemesterId, setSelectedSemesterId] = useState("all");
-  const [selectedSubjectId, setSelectedSubjectId] = useState("all");
-
-  const subjectsForReview = subjects.filter(subject => {
-    if (selectedSemesterId !== "all" && !semesters.some(semester => semester.id === selectedSemesterId && semester.number === subject.semester)) return false;
-    if (selectedSubjectId !== "all" && subject.id !== selectedSubjectId) return false;
-    return true;
-  });
+  // Generation always uses the complete uploaded dataset. These fixed values
+  // keep the legacy review list in "all" mode without asking the admin to
+  // choose a faculty, room, semester, or subject first.
+  const selectedSemesterId = "all";
+  const selectedSubjectId = "all";
+  const subjectsForReview = subjects;
+  const subjectsForSemester = subjects;
 
   const handleRegenerate = () => {
     setGenerationResult(null);
@@ -79,8 +78,6 @@ const TimetableGeneratorV2 = () => {
           semesters,
           timeSlots,
           leaveEntries,
-          semesterFilter: selectedSemesterId,
-          subjectFilter: selectedSubjectId,
         });
 
         setProgress(100);
@@ -107,10 +104,6 @@ const TimetableGeneratorV2 = () => {
 
   const errorCount = conflicts.filter(c => c.severity === 'error').length;
   const warningCount = conflicts.filter(c => c.severity === 'warning').length;
-  const subjectsForSemester = selectedSemesterId === "all"
-    ? subjects
-    : subjects.filter(subject => semesters.some(semester => semester.id === selectedSemesterId && semester.number === subject.semester));
-
   return (
     <div className="space-y-8 animate-fade-in max-w-5xl mx-auto">
       <div className="text-center space-y-4 mb-10">
@@ -205,20 +198,20 @@ const TimetableGeneratorV2 = () => {
           <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h3 className="text-2xl font-bold">Choose what to generate</h3>
+                <h3 className="text-2xl font-bold">Generate complete timetable</h3>
                 <p className="text-muted-foreground mt-1">
-                  Faculty and rooms are assigned automatically from your uploaded data. Faculty on leave are skipped automatically.
+                  The system automatically uses every uploaded subject, eligible faculty, classroom, semester, division, lecture slot, and approved leave record.
                 </p>
               </div>
               <span className="px-3 py-2 rounded-xl bg-primary/10 text-primary font-semibold text-sm">{subjects.length} subjects loaded</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-secondary/30 border border-border">
+            <div className="hidden grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-secondary/30 border border-border">
               <label className="space-y-2 text-sm font-medium">
                 <span>Semester</span>
                 <select
                   value={selectedSemesterId}
-                  onChange={event => { setSelectedSemesterId(event.target.value); setSelectedSubjectId("all"); }}
+                  onChange={() => undefined}
                   className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm"
                 >
                   <option value="all">All semesters</option>
@@ -229,7 +222,7 @@ const TimetableGeneratorV2 = () => {
                 <span>Subject</span>
                 <select
                   value={selectedSubjectId}
-                  onChange={event => setSelectedSubjectId(event.target.value)}
+                  onChange={() => undefined}
                   className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm"
                 >
                   <option value="all">All subjects</option>
@@ -262,7 +255,7 @@ const TimetableGeneratorV2 = () => {
             )}
 
             <div className="flex flex-col sm:flex-row gap-3 justify-between items-center pt-2">
-              <div className="text-sm text-muted-foreground">Select All to build the complete timetable, or select one semester and subject.</div>
+              <div className="text-sm text-muted-foreground">No manual faculty, room, semester, or subject selection is required.</div>
               <Button size="xl" variant="gradient" className="w-full sm:w-auto text-lg shadow-primary/30 shadow-lg" onClick={handleGenerate} disabled={subjects.length === 0}>
                 <Zap className="w-5 h-5 mr-2 fill-current" /> Generate Timetable Automatically
               </Button>

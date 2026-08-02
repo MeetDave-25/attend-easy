@@ -14,23 +14,38 @@ import { Switch } from "@/components/ui/switch";
 const SubjectManager = () => {
   const { subjects, addSubject, updateSubject, deleteSubject, faculty } = useTimetableStore();
   const [searchTerm, setSearchTerm] = useState("");
+  const [yearFilter, setYearFilter] = useState("all");
+  const [semesterFilter, setSemesterFilter] = useState("all");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | undefined>();
   const [formData, setFormData] = useState<Partial<Subject>>({
-    name: "", code: "", semester: 1, division: "A", lectureCountPerWeek: 4, labRequired: false, theoryHours: 4, labHours: 0, credits: 4, type: 'theory'
+    name: "", code: "", year: 1, semester: 1, division: "A", lectureCountPerWeek: 4, labRequired: false, theoryHours: 4, labHours: 0, credits: 4, type: 'theory'
   });
 
+  const getSubjectYear = (subject: Subject) => subject.year || Math.ceil(subject.semester / 2);
+  const yearOptions = Array.from(new Set(subjects.map(getSubjectYear))).sort((a, b) => a - b);
+  const semesterOptions = Array.from(new Set(
+    subjects
+      .filter((subject) => yearFilter === "all" || String(getSubjectYear(subject)) === yearFilter)
+      .map((subject) => subject.semester)
+  )).sort((a, b) => a - b);
+
   const filteredSubjects = subjects.filter(
-    (s) => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.code.toLowerCase().includes(searchTerm.toLowerCase())
+    (s) => {
+      const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.code.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesYear = yearFilter === "all" || String(getSubjectYear(s)) === yearFilter;
+      const matchesSemester = semesterFilter === "all" || String(s.semester) === semesterFilter;
+      return matchesSearch && matchesYear && matchesSemester;
+    }
   );
 
   const openForm = (subject?: Subject) => {
     if (subject) {
       setEditingSubject(subject);
-      setFormData(subject);
+      setFormData({ ...subject, year: subject.year || Math.ceil(subject.semester / 2) });
     } else {
       setEditingSubject(undefined);
-      setFormData({ name: "", code: "", semester: 1, division: "A", lectureCountPerWeek: 4, labRequired: false, theoryHours: 4, labHours: 0, credits: 4, type: 'theory' });
+      setFormData({ name: "", code: "", year: 1, semester: 1, division: "A", lectureCountPerWeek: 4, labRequired: false, theoryHours: 4, labHours: 0, credits: 4, type: 'theory' });
     }
     setIsFormOpen(true);
   };
@@ -71,10 +86,30 @@ const SubjectManager = () => {
         </Button>
       </div>
 
-      <div className="glass-card p-4 rounded-2xl flex gap-4">
+      <div className="glass-card p-4 rounded-2xl flex flex-col lg:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search subjects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3 lg:w-auto">
+          <Select value={yearFilter} onValueChange={(value) => { setYearFilter(value); setSemesterFilter("all"); }}>
+            <SelectTrigger className="w-full sm:w-[170px]">
+              <SelectValue placeholder="Filter by year" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Years</SelectItem>
+              {yearOptions.map((year) => <SelectItem key={year} value={String(year)}>Year {year}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={semesterFilter} onValueChange={setSemesterFilter}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="Filter by semester" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Semesters</SelectItem>
+              {semesterOptions.map((semester) => <SelectItem key={semester} value={String(semester)}>Semester {semester}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -84,6 +119,7 @@ const SubjectManager = () => {
             <tr>
               <th>Code</th>
               <th>Name</th>
+              <th>Year</th>
               <th>Sem / Div</th>
               <th>Type</th>
               <th>Lectures/Wk</th>
@@ -98,6 +134,7 @@ const SubjectManager = () => {
                 <tr key={subject.id}>
                   <td className="font-mono text-sm">{subject.code}</td>
                   <td className="font-medium">{subject.name}</td>
+                  <td>Year {getSubjectYear(subject)}</td>
                   <td>Sem {subject.semester} - Div {subject.division}</td>
                   <td>
                     <Badge variant={subject.type === 'lab' ? 'lab' : 'theory'}>
@@ -114,7 +151,7 @@ const SubjectManager = () => {
               )
             })}
             {filteredSubjects.length === 0 && (
-               <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">No subjects found</td></tr>
+               <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No subjects found</td></tr>
             )}
           </tbody>
         </table>
@@ -147,6 +184,10 @@ const SubjectManager = () => {
               <div className="space-y-2">
                 <Label>Semester</Label>
                 <Input type="number" value={formData.semester} onChange={e => setFormData({...formData, semester: parseInt(e.target.value)})} />
+              </div>
+              <div className="space-y-2">
+                <Label>Year</Label>
+                <Input type="number" min="1" value={formData.year} onChange={e => setFormData({...formData, year: parseInt(e.target.value)})} />
               </div>
               <div className="space-y-2">
                 <Label>Division</Label>

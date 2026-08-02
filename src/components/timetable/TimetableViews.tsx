@@ -4,15 +4,18 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Download, Printer } from "lucide-react";
 import TimetableGrid from "./TimetableGrid";
+import CollegeDailyTimetable from "./CollegeDailyTimetable";
 import { downloadTimetableCsv } from "@/lib/timetableExport";
 
 const TimetableViews = () => {
   const {
-    timetableEntries, semesters, faculty, subjects, classrooms,
+    timetableEntries, semesters, faculty, subjects, classrooms, collegeConfig, timeSlots,
     activeView, setActiveView, selectedSemesterId, setSelectedSemester,
     selectedDivisionId, setSelectedDivision,
   } = useTimetableStore();
   const [selectedFacultyId, setSelectedFacultyId] = useState("all");
+  const [layout, setLayout] = useState<"daily" | "weekly">("daily");
+  const [selectedDay, setSelectedDay] = useState(() => collegeConfig.workingDays[0] || "Monday");
 
   // Older saved state could contain the removed room/master tabs.
   useEffect(() => {
@@ -25,6 +28,18 @@ const TimetableViews = () => {
   }, [semesters, selectedSemesterId]);
 
   const selectedSemester = semesters.find(semester => semester.id === selectedSemesterId);
+  const availableDays = useMemo(() => {
+    const configuredDays = collegeConfig.workingDays.filter((day) => timeSlots.some((slot) => slot.day === day));
+    return configuredDays.length > 0
+      ? configuredDays
+      : Array.from(new Set(timeSlots.map((slot) => slot.day)));
+  }, [collegeConfig.workingDays, timeSlots]);
+
+  useEffect(() => {
+    if (availableDays.length > 0 && !availableDays.includes(selectedDay)) {
+      setSelectedDay(availableDays[0]);
+    }
+  }, [availableDays, selectedDay]);
 
   useEffect(() => {
     if (selectedSemesterId && selectedSemesterId !== "all" && !selectedSemester) {
@@ -57,11 +72,21 @@ const TimetableViews = () => {
               <span className="text-sm text-muted-foreground">Filtered faculty schedule</span>
             )}
           </div>
-          <TimetableGrid
-            viewType={viewType}
-            filterId={viewType === "student" ? `${semester.id}__${selectedDivisionId || "all"}` : selectedFacultyId}
-            semesterFilterId={semester.id}
-          />
+          {layout === "daily" ? (
+            <CollegeDailyTimetable
+              viewType={viewType}
+              semesterId={semester.id}
+              day={selectedDay}
+              divisionFilterId={viewType === "student" ? selectedDivisionId || "all" : "all"}
+              facultyFilterId={viewType === "faculty" ? selectedFacultyId : "all"}
+            />
+          ) : (
+            <TimetableGrid
+              viewType={viewType}
+              filterId={viewType === "student" ? `${semester.id}__${selectedDivisionId || "all"}` : selectedFacultyId}
+              semesterFilterId={semester.id}
+            />
+          )}
         </section>
       ))}
     </div>
@@ -85,7 +110,7 @@ const TimetableViews = () => {
       </div>
 
       <div className="glass-card p-4 rounded-2xl space-y-5">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
           <label className="space-y-2 text-sm font-medium">
             <span>Semester</span>
             <select
@@ -120,9 +145,26 @@ const TimetableViews = () => {
             </label>
           )}
 
-          <div className="flex items-end text-sm text-muted-foreground rounded-xl bg-secondary/30 px-3 py-2">
-            {visibleSemesters.length} semester{visibleSemesters.length === 1 ? "" : "s"} shown separately
-          </div>
+          <label className="space-y-2 text-sm font-medium">
+            <span>Format</span>
+            <select value={layout} onChange={event => setLayout(event.target.value as "daily" | "weekly")} className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm">
+              <option value="daily">College daily sheet</option>
+              <option value="weekly">Weekly grid</option>
+            </select>
+          </label>
+
+          {layout === "daily" ? (
+            <label className="space-y-2 text-sm font-medium">
+              <span>Day</span>
+              <select value={selectedDay} onChange={event => setSelectedDay(event.target.value)} className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm">
+                {availableDays.map(day => <option key={day} value={day}>{day}</option>)}
+              </select>
+            </label>
+          ) : (
+            <div className="flex items-end text-sm text-muted-foreground rounded-xl bg-secondary/30 px-3 py-2">
+              {visibleSemesters.length} semester{visibleSemesters.length === 1 ? "" : "s"} shown separately
+            </div>
+          )}
         </div>
 
         <Tabs value={activeView === "student" ? "student" : "faculty"} onValueChange={setActiveView} className="w-full">

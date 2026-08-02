@@ -58,7 +58,11 @@ const App = () => {
       console.warn(message, error);
       if (!syncErrorShown) {
         syncErrorShown = true;
-        toast.error("Shared data is offline. Check VITE_API_URL, backend CORS, and database deployment.");
+        const detail = error instanceof Error ? error.message : "Unknown API error";
+        toast.error(`Shared data sync failed: ${detail}`, {
+          duration: 9000,
+          description: "Check VITE_API_URL, backend CORS, and the deployed API health endpoint.",
+        });
       }
     };
 

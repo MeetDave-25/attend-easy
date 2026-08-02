@@ -16,12 +16,24 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.CORS_ORIGIN || '')
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/$/, ''))
     .filter(Boolean);
+const configuredVercelOrigin = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL.replace(/^https?:\/\//, '').replace(/\/$/, '')}`
+    : '';
+if (configuredVercelOrigin && !allowedOrigins.includes(configuredVercelOrigin)) {
+    allowedOrigins.push(configuredVercelOrigin);
+}
+
+const isAllowedOrigin = (origin) => {
+    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return true;
+    // Support Vercel preview deployments without opening CORS to arbitrary sites.
+    return /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
+};
 
 app.use(cors({
     origin(origin, callback) {
-        if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        if (isAllowedOrigin(origin)) {
             return callback(null, true);
         }
 
