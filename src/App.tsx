@@ -50,6 +50,9 @@ const App = () => {
     let saveTimer: number | undefined;
     let loadInProgress = false;
     let syncErrorShown = false;
+    let localRevision = 0;
+    let lastSyncedRevision = 0;
+    let applyingRemoteState = false;
 
     const reportSyncError = (message: string, error: unknown) => {
       console.warn(message, error);
@@ -81,17 +84,17 @@ const App = () => {
       state.timeSlots.length > 0 ||
       state.timetableEntries.length > 0;
 
-    const saveToServer = async () => {
+    const saveToServer = async (revision = localRevision) => {
       if (isDisposed || !isHydrated || loadInProgress) return;
       try {
         await syncAPI.saveState(getPayload());
+        lastSyncedRevision = Math.max(lastSyncedRevision, revision);
       } catch (error) {
         reportSyncError("Shared workspace save failed:", error);
       }
     };
 
     const unsubscribe = useTimetableStore.subscribe((state, previousState) => {
-      if (!isHydrated) return;
       const changed = state.collegeConfig !== previousState.collegeConfig ||
         state.faculty !== previousState.faculty ||
         state.subjects !== previousState.subjects ||
@@ -101,13 +104,18 @@ const App = () => {
         state.timetableEntries !== previousState.timetableEntries;
       if (!changed) return;
 
+      if (!applyingRemoteState) localRevision += 1;
+
+      if (!isHydrated) return;
       if (saveTimer) window.clearTimeout(saveTimer);
+      if (applyingRemoteState) return;
       saveTimer = window.setTimeout(() => { void saveToServer(); }, 700);
     });
 
     const loadFromServer = async () => {
       if (isDisposed || loadInProgress) return;
       loadInProgress = true;
+      const revisionAtLoadStart = localRevision;
       isHydrated = false;
       try {
         const remote = await syncAPI.getState();
@@ -125,21 +133,31 @@ const App = () => {
         );
 
         if (remoteHasData) {
-          const { collegeConfig, ...sharedData } = remote;
-          useTimetableStore.getState().hydrateSharedData({
-            ...sharedData,
-            ...(collegeConfig ? { collegeConfig } : {}),
-          });
-        } else if (hasWorkspaceData(localState)) {
-          isHydrated = true;
-          await saveToServer();
+          if (localRevision === revisionAtLoadStart && localRevision === lastSyncedRevision) {
+            const { collegeConfig, ...sharedData } = remote;
+            applyingRemoteState = true;
+            useTimetableStore.getState().hydrateSharedData({
+              ...sharedData,
+              ...(collegeConfig ? { collegeConfig } : {}),
+            });
+            applyingRemoteState = false;
+            lastSyncedRevision = localRevision;
+          }
+        } else if (hasWorkspaceData(localState) && localRevision === revisionAtLoadStart) {
+          // The browser may have the first local copy while the server is empty.
+          // Mark it pending so it is uploaded after this read finishes.
+          localRevision = Math.max(localRevision, 1);
         }
         isHydrated = true;
       } catch (error) {
+        applyingRemoteState = false;
         isHydrated = true;
         reportSyncError("Shared workspace load failed:", error);
       } finally {
         loadInProgress = false;
+        if (!isDisposed && isHydrated && localRevision > lastSyncedRevision) {
+          void saveToServer(localRevision);
+        }
       }
     };
 
