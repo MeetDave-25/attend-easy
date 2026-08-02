@@ -16,6 +16,50 @@ interface ImportModalProps {
 }
 
 type ImportMode = "faculty" | "subjects" | "classrooms" | "semesters";
+type ExcelCell = string | number | boolean | Date | null | undefined;
+type ExcelRow = Record<string, ExcelCell>;
+
+const normalizeHeader = (header: string) =>
+  header.replace(/^\uFEFF/, "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const normalizeCell = (value: ExcelCell) => String(value ?? "").trim();
+
+const normalizeRows = (rows: ExcelRow[]) => rows.map((row) =>
+  Object.fromEntries(Object.entries(row).map(([key, value]) => [normalizeHeader(key), value]))
+);
+
+const readCell = (row: Record<string, ExcelCell>, aliases: string[], fallback = "") => {
+  for (const alias of aliases) {
+    const value = row[normalizeHeader(alias)];
+    const text = normalizeCell(value);
+    if (text) return text;
+  }
+  return fallback;
+};
+
+const readNumber = (row: Record<string, ExcelCell>, aliases: string[], fallback: number) => {
+  const value = Number(readCell(row, aliases));
+  return Number.isFinite(value) ? value : fallback;
+};
+
+const normalizeStatus = (value: string, allowed: string[], fallback: string) => {
+  const normalized = value.toLowerCase().replace(/\s+/g, "-");
+  return allowed.includes(normalized) ? normalized : fallback;
+};
+
+const normalizeRoomType = (value: string): Classroom["roomType"] => {
+  const normalized = value.toLowerCase().replace(/[\s_-]+/g, "");
+  if (normalized === "lab" || normalized === "laboratory") return "lab";
+  if (normalized === "seminarhall" || normalized === "seminar") return "seminar_hall";
+  return "classroom";
+};
+
+const normalizeSubjectType = (value: string): Subject["type"] => {
+  const normalized = value.toLowerCase().trim();
+  if (normalized === "lab" || normalized === "laboratory" || normalized === "practical") return "lab";
+  if (normalized === "seminar") return "seminar";
+  return "theory";
+};
 
 const TEMPLATES: Record<ImportMode, { headers: string[]; sample: Record<string, string>[] }> = {
   faculty: {
@@ -115,12 +159,10 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
   const [activeTab, setActiveTab] = useState<ImportMode>("faculty");
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [preview, setPreview] = useState<Record<string, string>[] | null>(null);
+  const [preview, setPreview] = useState<ExcelRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  const store = useTimetableStore();
 
   const downloadTemplate = (mode: ImportMode) => {
     const wb = XLSX.utils.book_new();
@@ -142,7 +184,7 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "" });
+        const rows = XLSX.utils.sheet_to_json<ExcelRow>(sheet, { defval: "" });
 
         if (rows.length === 0) {
           setError("The file is empty or has no data rows.");
@@ -160,78 +202,90 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
     reader.readAsArrayBuffer(file);
   };
 
-  const importData = (rows: Record<string, string>[]) => {
+  const importData = (rows: ExcelRow[]) => {
     try {
+      const normalizedRows = normalizeRows(rows).filter((row) =>
+        Object.values(row).some((value) => normalizeCell(value))
+      );
+      const importStamp = Date.now();
+
+      if (normalizedRows.length === 0) {
+        throw new Error("The file contains no usable data rows.");
+      }
+
       if (activeTab === "faculty") {
-        const imported: Omit<Faculty, "id">[] = rows.map(r => ({
-          name: r["Name"] || "",
-          email: r["Email"] || "",
-          phone: r["Phone"] || "",
-          department: r["Department"] || "",
-          designation: r["Designation"] || "Lecturer",
+        const imported: Omit<Faculty, "id">[] = normalizedRows.map((r, index) => ({
+          name: readCell(r, ["Name", "Faculty Name", "Teacher Name"]),
+          email: readCell(r, ["Email", "Email ID", "Faculty Email"], `imported.faculty.${importStamp}.${index + 1}@local.invalid`),
+          phone: readCell(r, ["Phone", "Phone Number", "Mobile"]),
+          department: readCell(r, ["Department", "Dept"], "General"),
+          designation: readCell(r, ["Designation", "Role"], "Lecturer"),
           subjectIds: [],
           preferredSlots: [],
           unavailableSlots: [],
-          weeklyLoad: parseInt(r["Weekly Load"] || "18") || 18,
-          dailyLoad: parseInt(r["Daily Load"] || "4") || 4,
-          status: (r["Status"] as Faculty["status"]) || "active",
+          weeklyLoad: readNumber(r, ["Weekly Load", "Weekly Lectures", "Max Lectures Per Week"], 18),
+          dailyLoad: readNumber(r, ["Daily Load", "Daily Lectures", "Max Lectures Per Day"], 4),
+          status: normalizeStatus(readCell(r, ["Status"]), ["active", "inactive", "on-leave"], "active") as Faculty["status"],
         }));
-        imported.forEach(f => store.addFaculty(f));
+        if (imported.some((faculty) => !faculty.name)) throw new Error("Faculty Name is required.");
+        useTimetableStore.getState().addFacultyMany(imported);
         setSuccess(`✓ Successfully imported ${imported.length} faculty members`);
 
       } else if (activeTab === "subjects") {
-        const imported: Omit<Subject, "id">[] = rows.map(r => ({
-          name: r["Name"] || "",
-          code: r["Code"] || "",
-          semester: parseInt(r["Semester"] || "1") || 1,
-          division: r["Division"] || "All",
-          type: (r["Type"] as Subject["type"]) || "theory",
-          lectureCountPerWeek: parseInt(r["Lectures Per Week"] || "3") || 3,
-          theoryHours: parseInt(r["Theory Hours"] || "3") || 3,
-          labHours: parseInt(r["Lab Hours"] || "0") || 0,
-          credits: parseInt(r["Credits"] || "3") || 3,
-          labRequired: r["Type"] === "lab",
-        }));
-        imported.forEach(s => store.addSubject(s));
+        const imported: Omit<Subject, "id">[] = normalizedRows.map((r, index) => {
+          const type = normalizeSubjectType(readCell(r, ["Type", "Subject Type"]));
+          return {
+            name: readCell(r, ["Name", "Subject Name"]),
+            code: readCell(r, ["Code", "Subject Code"], `IMPORTED-${importStamp}-${index + 1}`),
+            semester: readNumber(r, ["Semester", "Semester Number", "Sem"], 1),
+            division: readCell(r, ["Division", "Div"], "All"),
+            type,
+            lectureCountPerWeek: readNumber(r, ["Lectures Per Week", "Lecture Count Per Week", "Weekly Lectures"], 3),
+            theoryHours: readNumber(r, ["Theory Hours"], 3),
+            labHours: readNumber(r, ["Lab Hours"], 0),
+            credits: readNumber(r, ["Credits"], 3),
+            labRequired: type === "lab",
+          };
+        });
+        if (imported.some((subject) => !subject.name)) throw new Error("Subject Name is required.");
+        useTimetableStore.getState().addSubjectMany(imported);
         setSuccess(`✓ Successfully imported ${imported.length} subjects`);
 
       } else if (activeTab === "classrooms") {
-        const imported: Omit<Classroom, "id">[] = rows.map(r => ({
-          roomNumber: r["Room Number"] || "",
-          capacity: parseInt(r["Capacity"] || "60") || 60,
-          roomType: (r["Room Type"] as Classroom["roomType"]) || "classroom",
-          floor: parseInt(r["Floor"] || "1") || 1,
-          block: r["Block"] || "",
+        const imported: Omit<Classroom, "id">[] = normalizedRows.map((r, index) => ({
+          roomNumber: readCell(r, ["Room Number", "Room No", "Room", "Classroom"], `Imported Room ${index + 1}`),
+          capacity: readNumber(r, ["Capacity", "Student Capacity"], 60),
+          roomType: normalizeRoomType(readCell(r, ["Room Type", "Type"])),
+          floor: readNumber(r, ["Floor"], 1),
+          block: readCell(r, ["Block", "Building"]),
           equipment: [],
-          status: (r["Status"] as Classroom["status"]) || "available",
+          status: normalizeStatus(readCell(r, ["Status"]), ["available", "maintenance", "occupied"], "available") as Classroom["status"],
         }));
-        imported.forEach(c => store.addClassroom(c));
+        useTimetableStore.getState().addClassroomMany(imported);
         setSuccess(`✓ Successfully imported ${imported.length} classrooms`);
 
       } else if (activeTab === "semesters") {
-        rows.forEach(r => {
-          const semNum = parseInt(r["Semester Number"] || "1") || 1;
-          const year = parseInt(r["Year"] || "1") || 1;
-          const divNames = (r["Division Names (comma-separated)"] || "A").split(",").map(d => d.trim());
-          const studentCount = parseInt(r["Student Count Per Division"] || "60") || 60;
+        const imported: Omit<Semester, "id">[] = normalizedRows.map((r) => {
+          const semNum = readNumber(r, ["Semester Number", "Semester", "Sem"], 1);
+          const year = readNumber(r, ["Year", "Academic Year"], 1);
+          const divNames = readCell(r, ["Division Names (comma-separated)", "Division Names", "Divisions"], "A")
+            .split(",").map((division) => division.trim()).filter(Boolean);
 
           const semId = generateId();
-          const divisions: Division[] = divNames.map(name => ({
-            id: generateId(),
-            name,
-            semesterId: semId,
-            studentCount,
+          const divisions: Division[] = divNames.map((name) => ({
+            id: generateId(), name, semesterId: semId,
+            studentCount: readNumber(r, ["Student Count Per Division", "Student Count", "Students"], 60),
             subjectIds: [],
           }));
-
-          store.addSemester({ number: semNum, year, isActive: true, divisions });
+          return { number: semNum, year, isActive: true, divisions };
         });
+        useTimetableStore.getState().addSemesterMany(imported);
         setSuccess(`✓ Successfully imported ${rows.length} semesters`);
       }
 
-      toast.success(`Import successful!`);
-    } catch {
-      setError("An error occurred while saving the data. Please check the file format.");
+      toast.success(`Import successful! ${normalizedRows.length} row${normalizedRows.length === 1 ? "" : "s"} added.`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "An error occurred while saving the data. Please check the file format.");
     }
   };
 
@@ -245,36 +299,36 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-3 sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="relative w-full max-w-2xl bg-background border border-border rounded-3xl shadow-2xl overflow-hidden"
+        className="relative my-auto flex w-full min-w-0 max-w-3xl max-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl sm:max-h-[calc(100dvh-2rem)]"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-border bg-gradient-to-r from-primary/5 to-purple-500/5">
-          <div>
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border bg-gradient-to-r from-primary/5 to-purple-500/5 p-4 sm:p-6">
+          <div className="min-w-0">
             <h2 className="text-xl font-bold flex items-center gap-2">
               <FileSpreadsheet className="w-5 h-5 text-primary" />
-              Excel Bulk Import
+              <span className="truncate">Excel Bulk Import</span>
             </h2>
-            <p className="text-sm text-muted-foreground mt-0.5">Import master data from an Excel template</p>
+            <p className="mt-0.5 truncate text-sm text-muted-foreground">Import master data from an Excel template</p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-muted transition-colors">
+          <button onClick={onClose} aria-label="Close Excel import" className="shrink-0 rounded-xl p-2 transition-colors hover:bg-muted">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4 sm:p-6">
           {/* Tab Switcher */}
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {TABS.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => { setActiveTab(tab.id); setPreview(null); setError(null); setSuccess(null); }}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
                   activeTab === tab.id
                     ? "gradient-primary text-white shadow-md"
                     : "bg-muted hover:bg-muted/80 text-muted-foreground"
@@ -286,12 +340,12 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
           </div>
 
           {/* Template Download */}
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-muted/30 border border-border">
-            <div>
+          <div className="flex flex-col gap-3 rounded-2xl border border-border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <p className="font-semibold text-sm">Step 1: Download Template</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Get the exact Excel format required for {activeTab} import</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Get the exact Excel format required for {activeTab} import</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => downloadTemplate(activeTab)} className="gap-2 rounded-xl">
+            <Button variant="outline" size="sm" onClick={() => downloadTemplate(activeTab)} className="w-full shrink-0 gap-2 rounded-xl sm:w-auto">
               <Download className="w-4 h-4" /> Template
             </Button>
           </div>
@@ -302,7 +356,7 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileRef.current?.click()}
-            className={`relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-300 ${
+            className={`relative rounded-2xl border-2 border-dashed p-6 text-center cursor-pointer transition-all duration-300 sm:p-10 ${
               isDragging
                 ? "border-primary bg-primary/5 scale-[1.01]"
                 : "border-border hover:border-primary/50 hover:bg-muted/30"
@@ -352,8 +406,8 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
           {preview && preview.length > 0 && (
             <div>
               <p className="text-sm font-semibold mb-2 text-muted-foreground">Preview (first 3 rows):</p>
-              <div className="overflow-x-auto rounded-xl border border-border text-xs">
-                <table className="w-full">
+              <div className="max-w-full overflow-x-auto rounded-xl border border-border text-xs">
+                <table className="w-full min-w-max">
                   <thead>
                     <tr className="bg-muted/50">
                       {Object.keys(preview[0]).map(k => (
@@ -365,7 +419,7 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
                     {preview.map((row, i) => (
                       <tr key={i} className="border-t border-border">
                         {Object.values(row).map((v, j) => (
-                          <td key={j} className="px-3 py-2 whitespace-nowrap">{v}</td>
+                          <td key={j} className="px-3 py-2 whitespace-nowrap">{normalizeCell(v)}</td>
                         ))}
                       </tr>
                     ))}
@@ -374,6 +428,15 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="flex shrink-0 justify-end gap-3 border-t border-border bg-background/95 p-4 backdrop-blur-sm">
+          <Button variant="outline" onClick={onClose} className="rounded-xl">
+            Close
+          </Button>
+          <Button variant="gradient" onClick={onClose} className="rounded-xl">
+            Done
+          </Button>
         </div>
       </motion.div>
     </div>

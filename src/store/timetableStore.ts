@@ -52,21 +52,25 @@ interface TimetableState {
 
   // Actions — Faculty
   addFaculty: (faculty: Omit<Faculty, 'id'>) => void;
+  addFacultyMany: (faculty: Omit<Faculty, 'id'>[]) => void;
   updateFaculty: (id: string, updates: Partial<Faculty>) => void;
   deleteFaculty: (id: string) => void;
 
   // Actions — Subjects
   addSubject: (subject: Omit<Subject, 'id'>) => void;
+  addSubjectMany: (subjects: Omit<Subject, 'id'>[]) => void;
   updateSubject: (id: string, updates: Partial<Subject>) => void;
   deleteSubject: (id: string) => void;
 
   // Actions — Classrooms
   addClassroom: (classroom: Omit<Classroom, 'id'>) => void;
+  addClassroomMany: (classrooms: Omit<Classroom, 'id'>[]) => void;
   updateClassroom: (id: string, updates: Partial<Classroom>) => void;
   deleteClassroom: (id: string) => void;
 
   // Actions — Semesters
   addSemester: (semester: Omit<Semester, 'id'>) => void;
+  addSemesterMany: (semesters: Omit<Semester, 'id'>[]) => void;
   updateSemester: (id: string, updates: Partial<Semester>) => void;
   deleteSemester: (id: string) => void;
   addDivision: (semesterId: string, division: Omit<Division, 'id' | 'semesterId'>) => void;
@@ -182,6 +186,8 @@ export const useTimetableStore = create<TimetableState>()(
       // Faculty
       addFaculty: (f) =>
         set((s) => ({ faculty: [...s.faculty, { ...f, id: generateId() }] })),
+      addFacultyMany: (faculty) =>
+        set((s) => ({ faculty: [...s.faculty, ...faculty.map((member) => ({ ...member, id: generateId() }))] })),
       updateFaculty: (id, updates) =>
         set((s) => ({ faculty: s.faculty.map((f) => (f.id === id ? { ...f, ...updates } : f)) })),
       deleteFaculty: (id) =>
@@ -190,6 +196,8 @@ export const useTimetableStore = create<TimetableState>()(
       // Subjects
       addSubject: (sub) =>
         set((s) => ({ subjects: [...s.subjects, { ...sub, id: generateId() }] })),
+      addSubjectMany: (subjects) =>
+        set((s) => ({ subjects: [...s.subjects, ...subjects.map((subject) => ({ ...subject, id: generateId() }))] })),
       updateSubject: (id, updates) =>
         set((s) => ({ subjects: s.subjects.map((sub) => (sub.id === id ? { ...sub, ...updates } : sub)) })),
       deleteSubject: (id) =>
@@ -198,6 +206,8 @@ export const useTimetableStore = create<TimetableState>()(
       // Classrooms
       addClassroom: (room) =>
         set((s) => ({ classrooms: [...s.classrooms, { ...room, id: generateId() }] })),
+      addClassroomMany: (classrooms) =>
+        set((s) => ({ classrooms: [...s.classrooms, ...classrooms.map((room) => ({ ...room, id: generateId() }))] })),
       updateClassroom: (id, updates) =>
         set((s) => ({ classrooms: s.classrooms.map((r) => (r.id === id ? { ...r, ...updates } : r)) })),
       deleteClassroom: (id) =>
@@ -206,6 +216,8 @@ export const useTimetableStore = create<TimetableState>()(
       // Semesters
       addSemester: (sem) =>
         set((s) => ({ semesters: [...s.semesters, { ...sem, id: generateId() }] })),
+      addSemesterMany: (semesters) =>
+        set((s) => ({ semesters: [...s.semesters, ...semesters.map((semester) => ({ ...semester, id: generateId() }))] })),
       updateSemester: (id, updates) =>
         set((s) => ({ semesters: s.semesters.map((sem) => (sem.id === id ? { ...sem, ...updates } : sem)) })),
       deleteSemester: (id) =>
