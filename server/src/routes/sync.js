@@ -25,6 +25,120 @@ const toCamel = (rows) => rows.map(row => Object.fromEntries(
     ])
 ));
 
+const asArray = (value) => Array.isArray(value) ? value : [];
+const cleanText = (value, fallback = '') => String(value ?? fallback).trim();
+const safeNumber = (value, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+const generatedId = (prefix, index) => `${prefix}-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`;
+
+const uniqueValue = (value, used, fallback, maxLength = 255) => {
+    const base = cleanText(value, fallback).slice(0, maxLength);
+    let candidate = base || fallback;
+    let suffix = 2;
+    while (used.has(candidate.toLowerCase())) {
+        const suffixText = `-${suffix}`;
+        candidate = `${base.slice(0, maxLength - suffixText.length)}${suffixText}`;
+        suffix += 1;
+    }
+    used.add(candidate.toLowerCase());
+    return candidate;
+};
+
+const normalizeSnapshot = (snapshot) => {
+    const facultyEmails = new Set();
+    const subjectCodes = new Set();
+    const faculty = asArray(snapshot.faculty).map((member, index) => {
+        const id = cleanText(member?.id, generatedId('faculty', index));
+        return {
+            ...member,
+            id,
+            name: cleanText(member?.name, `Faculty ${index + 1}`),
+            email: uniqueValue(member?.email, facultyEmails, `faculty-${id}@imported.local`),
+            subjectIds: asArray(member?.subjectIds),
+            preferredSlots: asArray(member?.preferredSlots),
+            unavailableSlots: asArray(member?.unavailableSlots),
+            weeklyLoad: safeNumber(member?.weeklyLoad, 0),
+            dailyLoad: safeNumber(member?.dailyLoad, 0),
+        };
+    });
+    const facultyIds = new Set(faculty.map((member) => member.id));
+
+    const classrooms = asArray(snapshot.classrooms).map((room, index) => ({
+        ...room,
+        id: cleanText(room?.id, generatedId('room', index)),
+        roomNumber: cleanText(room?.roomNumber, `Room ${index + 1}`),
+        capacity: safeNumber(room?.capacity, 1),
+        equipment: asArray(room?.equipment),
+    }));
+    const classroomIds = new Set(classrooms.map((room) => room.id));
+
+    const semesters = asArray(snapshot.semesters).map((semester, semesterIndex) => {
+        const semesterId = cleanText(semester?.id, generatedId('semester', semesterIndex));
+        return {
+            ...semester,
+            id: semesterId,
+            number: safeNumber(semester?.number, semesterIndex + 1),
+            year: safeNumber(semester?.year, 1),
+            divisions: asArray(semester?.divisions).map((division, divisionIndex) => ({
+                ...division,
+                id: cleanText(division?.id, generatedId(`division-${semesterIndex}`, divisionIndex)),
+                semesterId,
+                name: cleanText(division?.name, `Division ${divisionIndex + 1}`),
+                studentCount: safeNumber(division?.studentCount, 0),
+                subjectIds: asArray(division?.subjectIds),
+            })),
+        };
+    });
+    const semesterIds = new Set(semesters.map((semester) => semester.id));
+    const divisionIds = new Set(semesters.flatMap((semester) => semester.divisions.map((division) => division.id)));
+
+    const timeSlots = asArray(snapshot.timeSlots).map((slot, index) => ({
+        ...slot,
+        id: cleanText(slot?.id, generatedId('slot', index)),
+        day: cleanText(slot?.day, 'Monday'),
+        startTime: cleanText(slot?.startTime, '09:00'),
+        endTime: cleanText(slot?.endTime, '10:00'),
+        order: safeNumber(slot?.order, index + 1),
+    }));
+    const timeSlotIds = new Set(timeSlots.map((slot) => slot.id));
+
+    const subjects = asArray(snapshot.subjects).map((subject, index) => ({
+        ...subject,
+        id: cleanText(subject?.id, generatedId('subject', index)),
+        name: cleanText(subject?.name, `Subject ${index + 1}`),
+        code: uniqueValue(subject?.code, subjectCodes, `IMPORTED-${index + 1}`, 50),
+        semester: safeNumber(subject?.semester, 1),
+        facultyId: facultyIds.has(subject?.facultyId) ? subject.facultyId : null,
+        lectureCountPerWeek: safeNumber(subject?.lectureCountPerWeek, 0),
+        theoryHours: safeNumber(subject?.theoryHours, 0),
+        labHours: safeNumber(subject?.labHours, 0),
+        credits: safeNumber(subject?.credits, 0),
+        year: subject?.year == null ? null : safeNumber(subject.year, null),
+    }));
+    const subjectIds = new Set(subjects.map((subject) => subject.id));
+
+    const timetableEntries = asArray(snapshot.timetableEntries).filter((entry) =>
+        subjectIds.has(entry?.subjectId) &&
+        facultyIds.has(entry?.facultyId) &&
+        classroomIds.has(entry?.classroomId) &&
+        semesterIds.has(entry?.semesterId) &&
+        divisionIds.has(entry?.divisionId) &&
+        timeSlotIds.has(entry?.timeSlotId)
+    );
+
+    return { faculty, subjects, classrooms, semesters, timeSlots, timetableEntries };
+};
+
+const syncErrorMessage = (error) => {
+    if (error?.code === '23505') return `Duplicate ${error.constraint || 'record'} in the uploaded data. Use unique faculty emails and subject codes.`;
+    if (error?.code === '23503') return 'Some timetable rows refer to missing faculty, room, subject, semester, division, or time slot data.';
+    if (error?.code === '23502') return `A required field is missing: ${error.column || 'unknown field'}.`;
+    if (error?.code === '22P02') return 'One of the uploaded values has an invalid number or format.';
+    return `Failed to save shared workspace${error?.code ? ` (${error.code})` : ''}.`;
+};
+
 // Load the shared college workspace for a new device/browser.
 router.get('/', requireSyncUser, async (req, res) => {
     try {
@@ -79,14 +193,29 @@ router.post('/', requireSyncUser, async (req, res) => {
     const client = await pool.connect();
     try {
         const {
-            faculty = [],
-            subjects = [],
-            classrooms = [],
-            semesters = [],
-            timeSlots = [],
-            timetableEntries = [],
+            faculty: rawFaculty = [],
+            subjects: rawSubjects = [],
+            classrooms: rawClassrooms = [],
+            semesters: rawSemesters = [],
+            timeSlots: rawTimeSlots = [],
+            timetableEntries: rawTimetableEntries = [],
             collegeConfig = null,
         } = req.body || {};
+        const {
+            faculty,
+            subjects,
+            classrooms,
+            semesters,
+            timeSlots,
+            timetableEntries,
+        } = normalizeSnapshot({
+            faculty: rawFaculty,
+            subjects: rawSubjects,
+            classrooms: rawClassrooms,
+            semesters: rawSemesters,
+            timeSlots: rawTimeSlots,
+            timetableEntries: rawTimetableEntries,
+        });
 
         await client.query('BEGIN');
         await client.query('TRUNCATE TABLE timetable_entries, time_slots, divisions, semesters, classrooms, subjects, faculty, college_config CASCADE');
@@ -100,18 +229,18 @@ router.post('/', requireSyncUser, async (req, res) => {
                   division_count, is_configured)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
                 [
-                    collegeConfig.collegeName,
-                    collegeConfig.workingDays || [],
-                    collegeConfig.startTime,
-                    collegeConfig.endTime,
-                    collegeConfig.lectureDuration,
-                    collegeConfig.lunchBreakStart,
-                    collegeConfig.lunchBreakEnd,
-                    collegeConfig.shortBreakDuration,
-                    collegeConfig.maxLecturesPerDay,
-                    collegeConfig.maxLecturesPerFaculty,
-                    collegeConfig.semesterCount,
-                    collegeConfig.divisionCount,
+                    cleanText(collegeConfig.collegeName, 'My College'),
+                    asArray(collegeConfig.workingDays),
+                    cleanText(collegeConfig.startTime, '09:00'),
+                    cleanText(collegeConfig.endTime, '17:00'),
+                    safeNumber(collegeConfig.lectureDuration, 60),
+                    cleanText(collegeConfig.lunchBreakStart, '13:00'),
+                    cleanText(collegeConfig.lunchBreakEnd, '14:00'),
+                    safeNumber(collegeConfig.shortBreakDuration, 0),
+                    safeNumber(collegeConfig.maxLecturesPerDay, 0),
+                    safeNumber(collegeConfig.maxLecturesPerFaculty, 0),
+                    safeNumber(collegeConfig.semesterCount, 0),
+                    safeNumber(collegeConfig.divisionCount, 0),
                     Boolean(collegeConfig.isConfigured),
                 ]
             );
@@ -198,7 +327,7 @@ router.post('/', requireSyncUser, async (req, res) => {
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Error during sync commit:', error);
-        res.status(500).json({ success: false, error: { message: 'Failed to save shared workspace' } });
+        res.status(500).json({ success: false, error: { message: syncErrorMessage(error) } });
     } finally {
         client.release();
     }
