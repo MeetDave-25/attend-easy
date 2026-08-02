@@ -29,6 +29,8 @@ export interface SchedulerInput {
   semesters: Semester[];
   timeSlots: TimeSlot[];
   leaveEntries: LeaveEntry[];
+  semesterFilter?: string;
+  subjectFilter?: string;
   facultyOverrides?: Record<string, string>;
   classroomOverrides?: Record<string, string>;
 }
@@ -168,6 +170,8 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     semesters,
     timeSlots,
     leaveEntries,
+    semesterFilter,
+    subjectFilter,
     facultyOverrides = {},
     classroomOverrides = {},
   } = input;
@@ -206,9 +210,11 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
   const tasks: Task[] = [];
 
   for (const semester of semesters) {
+    if (semesterFilter && semesterFilter !== 'all' && semester.id !== semesterFilter) continue;
     for (const division of semester.divisions) {
       const divSubjects = subjects.filter(
         sub =>
+          (!subjectFilter || subjectFilter === 'all' || sub.id === subjectFilter) &&
           sub.semester === semester.number &&
           (sub.division === division.name || sub.division === 'All' || !sub.division)
       );
@@ -219,14 +225,17 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
         // Find all faculty who can teach this subject
         let facultyCandidates: Faculty[] = [];
         const selectedFacultyId = facultyOverrides[subject.id] || subject.facultyId;
-        if (selectedFacultyId) {
-          const f = faculty.find(f => f.id === selectedFacultyId);
-          if (f && f.status === 'active') facultyCandidates = [f];
-        } else {
-          facultyCandidates = faculty.filter(
-            f => f.status === 'active' && (f.subjectIds?.includes(subject.id) || f.subjectIds?.length === 0)
-          );
-        }
+        const eligibleFaculty = faculty.filter(
+          f => f.status === 'active' && (f.subjectIds?.includes(subject.id) || f.subjectIds?.length === 0 || f.id === selectedFacultyId)
+        );
+        const assignedFaculty = selectedFacultyId
+          ? eligibleFaculty.find(member => member.id === selectedFacultyId)
+          : undefined;
+        // Prefer the configured teacher, but keep other eligible teachers as
+        // fallbacks when the configured teacher is on leave or unavailable.
+        facultyCandidates = assignedFaculty
+          ? [assignedFaculty, ...eligibleFaculty.filter(member => member.id !== assignedFaculty.id)]
+          : eligibleFaculty;
 
         tasks.push({
           subject,

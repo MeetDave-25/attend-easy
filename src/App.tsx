@@ -12,6 +12,7 @@ import ModernSplashScreen from "./components/shared/ModernSplashScreen";
 import ErrorBoundary from "./components/shared/ErrorBoundary";
 import { useTimetableStore } from "./store/timetableStore";
 import { syncAPI } from "./lib/api";
+import { toast } from "sonner";
 
 const queryClient = new QueryClient();
 
@@ -44,6 +45,15 @@ const App = () => {
     let isHydrated = false;
     let saveTimer: number | undefined;
     let loadInProgress = false;
+    let syncErrorShown = false;
+
+    const reportSyncError = (message: string, error: unknown) => {
+      console.warn(message, error);
+      if (!syncErrorShown) {
+        syncErrorShown = true;
+        toast.error("Shared data is offline. Check VITE_API_URL, backend CORS, and database deployment.");
+      }
+    };
 
     const getPayload = () => {
       const state = useTimetableStore.getState();
@@ -72,7 +82,7 @@ const App = () => {
       try {
         await syncAPI.saveState(getPayload());
       } catch (error) {
-        console.warn("Shared workspace save failed:", error);
+        reportSyncError("Shared workspace save failed:", error);
       }
     };
 
@@ -123,7 +133,7 @@ const App = () => {
         isHydrated = true;
       } catch (error) {
         isHydrated = true;
-        console.warn("Shared workspace load failed:", error);
+        reportSyncError("Shared workspace load failed:", error);
       } finally {
         loadInProgress = false;
       }

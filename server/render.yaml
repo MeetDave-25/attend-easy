@@ -17,4 +17,4 @@ services:
       - key: JWT_EXPIRY
         value: 24h
       - key: ALLOWED_ORIGINS
-        value: https://your-frontend-domain.com
+        sync: false

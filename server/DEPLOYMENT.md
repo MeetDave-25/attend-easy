@@ -21,7 +21,7 @@ NODE_ENV=production
 DATABASE_URL=<render-postgres-connection-string>
 JWT_SECRET=<secure-random-string>
 JWT_EXPIRY=24h
-ALLOWED_ORIGINS=https://your-frontend-domain.com
+ALLOWED_ORIGINS=https://<your-vercel-project>.vercel.app
 ```
 
 ## Frontend on Vercel or Netlify
@@ -41,7 +41,7 @@ dist
 Set this frontend environment variable:
 
 ```env
-VITE_API_URL=https://your-render-api.onrender.com/api
+VITE_API_URL=https://<your-render-service>.onrender.com/api
 ```
 
 After your frontend URL is live, update the backend `ALLOWED_ORIGINS` value to that exact URL.
