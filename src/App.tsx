@@ -15,6 +15,7 @@ import { syncAPI } from "./lib/api";
 import { toast } from "sonner";
 
 const queryClient = new QueryClient();
+const SPLASH_SESSION_KEY = "attendeasy_splash_seen";
 
 // Auth Guard
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -29,9 +30,15 @@ const SplashGate = ({ showSplash, onComplete }: { showSplash: boolean; onComplet
 };
 
 const App = () => {
-  // Show the launch screen on every full page load, including authenticated
-  // dashboard reloads and direct links to /app or /student.
-  const [showSplash, setShowSplash] = useState(true);
+  // Show once per browser tab/session. Logout and internal navigation do not
+  // restart it, but a fresh app session gets the full launch experience.
+  const [showSplash, setShowSplash] = useState(() => {
+    try {
+      return sessionStorage.getItem(SPLASH_SESSION_KEY) !== "true";
+    } catch {
+      return true;
+    }
+  });
 
   const currentUserId = useTimetableStore(state => state.currentUser?.id);
 
@@ -152,6 +159,11 @@ const App = () => {
   }, [currentUserId]);
 
   const handleSplashComplete = () => {
+    try {
+      sessionStorage.setItem(SPLASH_SESSION_KEY, "true");
+    } catch {
+      // Continue even if storage is disabled by the browser.
+    }
     setShowSplash(false);
   };
 
