@@ -44,7 +44,9 @@ Set this frontend environment variable:
 VITE_API_URL=https://<your-render-service>.onrender.com/api
 ```
 
-After your frontend URL is live, update the backend `ALLOWED_ORIGINS` value to that exact URL.
+After your frontend URL is live, update the backend `ALLOWED_ORIGINS` value to that exact URL. The API also accepts secure HTTPS browser origins, so the same deployment works from a Vercel preview or a custom college domain.
+
+Important: use the real Render service address in `VITE_API_URL`; do not leave `https://your-api-domain.com/api` or any example placeholder. After changing a Vercel environment variable, redeploy the frontend so Vite includes the new value in the browser build.
 
 ## Default Accounts
 

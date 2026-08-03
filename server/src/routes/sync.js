@@ -32,6 +32,22 @@ const safeNumber = (value, fallback = 0) => {
     return Number.isFinite(parsed) ? parsed : fallback;
 };
 const generatedId = (prefix, index) => `${prefix}-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`;
+const notificationTypes = new Set(['timetable_published', 'lecture_changed', 'replacement_assigned', 'leave_approved', 'request_rejected', 'conflict_detected', 'system']);
+const notificationRoles = new Set(['hod', 'faculty', 'student', 'all']);
+
+const ensureNotificationsTable = (client) => client.query(`
+    CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        type VARCHAR(80) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        for_role VARCHAR(50) NOT NULL,
+        for_user_id TEXT,
+        is_read BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        scheduled_for TIMESTAMPTZ
+    )
+`);
 
 const uniqueValue = (value, used, fallback, maxLength = 255) => {
     const base = cleanText(value, fallback).slice(0, maxLength);
@@ -128,7 +144,22 @@ const normalizeSnapshot = (snapshot) => {
         timeSlotIds.has(entry?.timeSlotId)
     );
 
-    return { faculty, subjects, classrooms, semesters, timeSlots, timetableEntries };
+    const notifications = asArray(snapshot.notifications).map((notification, index) => {
+        const scheduledAt = notification?.scheduledFor ? new Date(notification.scheduledFor) : null;
+        return {
+            id: cleanText(notification?.id, generatedId('notification', index)),
+            type: notificationTypes.has(notification?.type) ? notification.type : 'system',
+            title: cleanText(notification?.title, 'College update').slice(0, 255),
+            message: cleanText(notification?.message, 'There is an update in the college workspace.'),
+            forRole: notificationRoles.has(notification?.forRole) ? notification.forRole : 'all',
+            forUserId: cleanText(notification?.forUserId) || null,
+            isRead: Boolean(notification?.isRead),
+            createdAt: Number.isNaN(new Date(notification?.createdAt).getTime()) ? new Date().toISOString() : notification.createdAt,
+            scheduledFor: scheduledAt && !Number.isNaN(scheduledAt.getTime()) ? scheduledAt.toISOString() : null,
+        };
+    });
+
+    return { faculty, subjects, classrooms, semesters, timeSlots, timetableEntries, notifications };
 };
 
 const syncErrorMessage = (error) => {
@@ -142,6 +173,7 @@ const syncErrorMessage = (error) => {
 // Load the shared college workspace for a new device/browser.
 router.get('/', requireSyncUser, async (req, res) => {
     try {
+        await ensureNotificationsTable(pool);
         const [
             facultyRes,
             subjectsRes,
@@ -151,6 +183,7 @@ router.get('/', requireSyncUser, async (req, res) => {
             timeSlotsRes,
             timetableEntriesRes,
             collegeConfigRes,
+            notificationsRes,
         ] = await Promise.all([
             pool.query('SELECT * FROM faculty ORDER BY name'),
             pool.query('SELECT * FROM subjects ORDER BY semester, division, name'),
@@ -160,6 +193,7 @@ router.get('/', requireSyncUser, async (req, res) => {
             pool.query('SELECT * FROM time_slots ORDER BY day, order_idx, start_time'),
             pool.query('SELECT * FROM timetable_entries ORDER BY day, start_time'),
             pool.query('SELECT * FROM college_config LIMIT 1'),
+            pool.query('SELECT * FROM notifications ORDER BY created_at DESC'),
         ]);
 
         const divisions = toCamel(divisionsRes.rows);
@@ -177,6 +211,7 @@ router.get('/', requireSyncUser, async (req, res) => {
                 semesters,
                 timeSlots: toCamel(timeSlotsRes.rows),
                 timetableEntries: toCamel(timetableEntriesRes.rows),
+                notifications: toCamel(notificationsRes.rows),
                 collegeConfig: toCamel(collegeConfigRes.rows)[0] || null,
             },
         });
@@ -199,6 +234,7 @@ router.post('/', requireSyncUser, async (req, res) => {
             semesters: rawSemesters = [],
             timeSlots: rawTimeSlots = [],
             timetableEntries: rawTimetableEntries = [],
+            notifications: rawNotifications = [],
             collegeConfig = null,
         } = req.body || {};
         const {
@@ -208,6 +244,7 @@ router.post('/', requireSyncUser, async (req, res) => {
             semesters,
             timeSlots,
             timetableEntries,
+            notifications,
         } = normalizeSnapshot({
             faculty: rawFaculty,
             subjects: rawSubjects,
@@ -215,10 +252,13 @@ router.post('/', requireSyncUser, async (req, res) => {
             semesters: rawSemesters,
             timeSlots: rawTimeSlots,
             timetableEntries: rawTimetableEntries,
+            notifications: rawNotifications,
         });
 
+        await ensureNotificationsTable(client);
         await client.query('BEGIN');
         await client.query('TRUNCATE TABLE timetable_entries, time_slots, divisions, semesters, classrooms, subjects, faculty, college_config CASCADE');
+        await client.query('DELETE FROM notifications');
 
         if (collegeConfig) {
             await client.query(
@@ -318,6 +358,19 @@ router.post('/', requireSyncUser, async (req, res) => {
                     entry.semesterId, entry.divisionId, entry.day, entry.startTime, entry.endTime,
                     entry.week || null, Boolean(entry.isPublished), Boolean(entry.isModified),
                     entry.replacementFacultyId || null,
+                ]
+            );
+        }
+
+        for (const notification of notifications) {
+            await client.query(
+                `INSERT INTO notifications
+                 (id, type, title, message, for_role, for_user_id, is_read, created_at, scheduled_for)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [
+                    notification.id, notification.type, notification.title, notification.message,
+                    notification.forRole, notification.forUserId, notification.isRead, notification.createdAt,
+                    notification.scheduledFor,
                 ]
             );
         }

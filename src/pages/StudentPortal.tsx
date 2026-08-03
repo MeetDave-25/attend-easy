@@ -1,24 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
 import {
   GraduationCap,
-  QrCode,
-  ClipboardList,
   Calendar,
   CheckCircle2,
   User,
   ArrowLeft,
-  BookOpen,
-  LogOut
+  LogOut,
+  Bell,
+  MapPin
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import QRScanner from "@/components/student/QRScanner";
 import { cn } from "@/lib/utils";
-import { authAPI, attendanceAPI, studentsAPI } from "@/lib/api";
+import { authAPI, studentsAPI } from "@/lib/api";
 import { useTimetableStore } from "@/store/timetableStore";
+import { notificationsForUser } from "@/lib/notifications";
 
-type View = "home" | "scan" | "attendance" | "schedule";
+type View = "home" | "schedule" | "notifications";
+
+const minutesFromTime = (value: string) => {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+};
 
 interface StudentProfile {
   id: string;
@@ -30,25 +33,23 @@ interface StudentProfile {
   email: string;
 }
 
-const mockAttendance = [
-  { subject: "Data Structures", code: "CS201", percentage: 85, classes: 17, total: 20 },
-  { subject: "Algorithms", code: "CS301", percentage: 90, classes: 18, total: 20 },
-  { subject: "Database Systems", code: "CS302", percentage: 75, classes: 15, total: 20 },
-  { subject: "Operating Systems", code: "CS401", percentage: 80, classes: 16, total: 20 },
-];
-
 const StudentPortal = () => {
   const [currentView, setCurrentView] = useState<View>("home");
-  const [markedSessions, setMarkedSessions] = useState<string[]>([]);
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => new Date());
   const {
     setCurrentUser, currentUser, timetableEntries, subjects, classrooms,
-    semesters, timeSlots, collegeConfig,
+    semesters, timeSlots, collegeConfig, notifications, markNotificationRead,
   } = useTimetableStore();
   const authUser = currentUser || authAPI.getCurrentUser();
-  const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
+  const todayName = now.toLocaleDateString("en-US", { weekday: "long" });
   const [selectedDay, setSelectedDay] = useState(todayName);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -117,9 +118,9 @@ const StudentPortal = () => {
   ).sort((left, right) => left.startTime.localeCompare(right.startTime)), [timetableEntries, studentSemester?.id, studentDivision?.id, todayName]);
 
   const nextClass = todayEntries.find((entry) => {
-    const [hour, minute] = entry.endTime.split(":").map(Number);
-    return hour * 60 + minute >= new Date().getHours() * 60 + new Date().getMinutes();
+    return minutesFromTime(entry.endTime) >= now.getHours() * 60 + now.getMinutes();
   }) || todayEntries[0];
+  const studentNotifications = notificationsForUser(notifications, authUser, now);
   const mockStudent = {
     rollNumber: studentProfile?.rollNumber || "Profile loading",
     year: studentProfile?.year || "—",
@@ -129,60 +130,31 @@ const StudentPortal = () => {
     const subject = subjects.find((item) => item.id === entry?.subjectId);
     const room = classrooms.find((item) => item.id === entry?.classroomId);
     const isBreak = slot.slotType === "break" || slot.slotType === "lunch";
+    const roomDisplay = room?.roomNumber ? `Room ${room.roomNumber}` : entry ? "Room not assigned yet" : "â€”";
     return {
       time: slot.startTime,
+      endTime: slot.endTime,
+      roomDisplay,
+      hasLecture: Boolean(entry),
       subject: isBreak ? (slot.slotType === "lunch" ? "Lunch" : "Break") : subject?.name || "No class",
       room: room?.roomNumber ? `Room ${room.roomNumber}` : "—",
     };
   });
 
-  const handleAttendanceMarked = async (sessionData: any, location: GeolocationCoordinates) => {
-    try {
-      // Get the current logged-in student
-      const user = authAPI.getCurrentUser();
-      if (!user || user.role !== 'student') {
-        throw new Error('Student authentication required');
-      }
-
-      // Call the backend API to mark attendance
-      await attendanceAPI.markAttendance({
-        sessionId: sessionData.sessionId,
-        studentId: user.studentId || user.id,
-        locationLat: location.latitude,
-        locationLng: location.longitude,
-        locationAccuracy: location.accuracy
-      });
-
-      console.log("Attendance marked successfully:", sessionData, "Location:", location);
-      setMarkedSessions([...markedSessions, sessionData.sessionId]);
-    } catch (error: any) {
-      console.error('Failed to mark attendance:', error);
-      // Re-throw the error so QRScanner can handle it
-      throw error;
-    }
-  };
-
   const menuItems = [
     {
-      id: "scan",
-      label: "Scan QR",
-      description: "Mark your attendance",
-      icon: QrCode,
-      color: "gradient-primary"
-    },
-    {
-      id: "attendance",
-      label: "My Attendance",
-      description: "View attendance records",
-      icon: ClipboardList,
-      color: "gradient-accent"
-    },
-    {
       id: "schedule",
-      label: "Today's Schedule",
-      description: "View your classes",
+      label: "My Timetable",
+      description: "Subjects, rooms and class times",
       icon: Calendar,
       color: "bg-success"
+    },
+    {
+      id: "notifications",
+      label: "College Updates",
+      description: studentNotifications.length ? `${studentNotifications.length} announcement${studentNotifications.length === 1 ? "" : "s"}` : "No new announcements",
+      icon: Bell,
+      color: "bg-violet-600"
     },
   ];
 
@@ -208,17 +180,8 @@ const StudentPortal = () => {
         </div>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 gap-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="p-4 rounded-xl bg-card shadow-card"
-        >
-          <p className="text-sm text-muted-foreground">Overall Attendance</p>
-          <p className="text-3xl font-bold text-success">82%</p>
-        </motion.div>
+      {/* Today's timetable summary */}
+      <div className="grid grid-cols-1 gap-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -262,7 +225,7 @@ const StudentPortal = () => {
         transition={{ delay: 0.5 }}
         className="p-4 rounded-xl border-2 border-primary/20 bg-primary/5"
       >
-        <p className="text-sm text-muted-foreground mb-2">Next Class</p>
+        <p className="text-sm text-muted-foreground mb-2">Next Lecture</p>
         <div className="flex items-center justify-between">
           <div>
             <p className="font-semibold">{nextClass ? subjects.find((subject) => subject.id === nextClass.subjectId)?.name : "No class scheduled"}</p>
@@ -275,14 +238,7 @@ const StudentPortal = () => {
                 : "Your timetable updates automatically when the college updates it."}
             </p>
           </div>
-          <Button
-            size="sm"
-            onClick={() => setCurrentView("scan")}
-            className="gradient-primary border-0"
-          >
-            <QrCode className="w-4 h-4 mr-2" />
-            Mark
-          </Button>
+          <Button size="sm" onClick={() => setCurrentView("schedule")} className="gradient-primary border-0">View</Button>
         </div>
       </motion.div>
 
@@ -303,6 +259,7 @@ const StudentPortal = () => {
     </motion.div>
   );
 
+  /* Legacy attendance UI intentionally removed: this is a timetable-only student portal.
   const renderAttendance = () => (
     <motion.div
       initial={{ opacity: 0 }}
@@ -357,7 +314,7 @@ const StudentPortal = () => {
         </motion.div>
       ))}
 
-      {/* Low Attendance Warning */}
+      // Low attendance warning (legacy)
       {mockAttendance.some(s => s.percentage < 75) && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -372,6 +329,8 @@ const StudentPortal = () => {
       )}
     </motion.div>
   );
+
+  ); */
 
   const renderSchedule = () => (
     <motion.div
@@ -415,8 +374,10 @@ const StudentPortal = () => {
       <div className="space-y-3">
         {mockSchedule.map((slot, index) => {
           const isBreak = slot.subject === "Break" || slot.subject === "Lunch";
-          const isPast = index < 2;
-          const isCurrent = index === 2;
+          const nowMinutes = now.getHours() * 60 + now.getMinutes();
+          const isTodayView = selectedDay === todayName;
+          const isPast = isTodayView && minutesFromTime(slot.endTime) <= nowMinutes;
+          const isCurrent = isTodayView && !isBreak && minutesFromTime(slot.time) <= nowMinutes && nowMinutes < minutesFromTime(slot.endTime);
 
           return (
             <motion.div
@@ -442,8 +403,8 @@ const StudentPortal = () => {
                 )}>
                   {slot.subject}
                 </p>
-                {!isBreak && (
-                  <p className="text-sm text-muted-foreground">{slot.room}</p>
+                {!isBreak && slot.hasLecture && (
+                  <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-primary"><MapPin className="h-4 w-4" />{slot.roomDisplay}</p>
                 )}
               </div>
               {isPast && !isBreak && (
@@ -461,6 +422,17 @@ const StudentPortal = () => {
     </motion.div>
   );
 
+  const renderNotifications = () => (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+      <div className="flex items-center gap-3 mb-6">
+        <Button variant="ghost" size="icon" onClick={() => setCurrentView("home")}><ArrowLeft className="w-5 h-5" /></Button>
+        <div><h2 className="text-xl font-bold">College Updates</h2><p className="text-sm text-muted-foreground">Timetable changes and announcements</p></div>
+      </div>
+      {studentNotifications.length === 0 ? <div className="rounded-xl bg-card p-8 text-center text-sm text-muted-foreground shadow-card">No updates right now.</div> : studentNotifications.map((notification) => <button key={notification.id} onClick={() => markNotificationRead(notification.id)} className="w-full rounded-xl bg-card p-4 text-left shadow-card"><div className="flex gap-3"><span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${notification.isRead ? "bg-muted-foreground/30" : "bg-primary"}`} /><div><p className="font-semibold">{notification.title}</p><p className="mt-1 text-sm text-muted-foreground">{notification.message}</p><p className="mt-2 text-xs text-muted-foreground">{new Date(notification.createdAt).toLocaleString()}</p></div></div></button>)}
+    </motion.div>
+  );
+
+  /* Legacy QR attendance screen intentionally removed.
   const renderScan = () => (
     <motion.div
       initial={{ opacity: 0 }}
@@ -477,14 +449,14 @@ const StudentPortal = () => {
     </motion.div>
   );
 
+  ); */
+
   const renderContent = () => {
     switch (currentView) {
-      case "scan":
-        return renderScan();
-      case "attendance":
-        return renderAttendance();
       case "schedule":
         return renderSchedule();
+      case "notifications":
+        return renderNotifications();
       default:
         return renderHome();
     }

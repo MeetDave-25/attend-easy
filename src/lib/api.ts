@@ -1,5 +1,5 @@
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import { Classroom, CollegeConfig, Faculty, Semester, Subject, TimeSlot, TimetableEntry } from '@/types';
+import { Classroom, CollegeConfig, Faculty, Notification, Semester, Subject, TimeSlot, TimetableEntry } from '@/types';
 
 const rawApiUrl = (import.meta.env.VITE_API_URL || '').trim();
 const defaultApiOrigin = import.meta.env.DEV ? 'http://localhost:3000' : window.location.origin;
@@ -7,6 +7,7 @@ const configuredApiUrl = (rawApiUrl || defaultApiOrigin).replace(/\/$/, '');
 const isPlaceholderApiUrl = /your-api-domain\.com|your-render-service|example\.com/i.test(configuredApiUrl);
 // Accept either the Render origin or the full API base URL from Vercel.
 const API_URL = configuredApiUrl.endsWith('/api') ? configuredApiUrl : `${configuredApiUrl}/api`;
+const SYNC_RETRY_DELAY_MS = 1500;
 
 const assertApiConfigured = () => {
     if (isPlaceholderApiUrl) {
@@ -27,8 +28,29 @@ const api = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
-    timeout: 10000,
+    // Free hosting services can take longer than ten seconds to wake up after
+    // being idle. Give the first request enough time before reporting an error.
+    timeout: 30000,
 });
+
+const wait = (milliseconds: number) => new Promise<void>((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+});
+
+const retrySharedRequest = async <T>(request: () => Promise<T>): Promise<T> => {
+    try {
+        return await request();
+    } catch (error) {
+        // Retry only a connection failure. Validation, authentication and server
+        // errors are returned immediately so they are never hidden from the user.
+        if (!(error instanceof Error) || !error.message.includes('No response from server')) {
+            throw error;
+        }
+
+        await wait(SYNC_RETRY_DELAY_MS);
+        return request();
+    }
+};
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     assertApiConfigured();
@@ -272,15 +294,16 @@ export const marksAPI = {
 // generated timetable in the server database instead of only in one browser.
 export const syncAPI = {
     getState: async () => {
-        const response = await api.get<unknown, ApiEnvelope<{
+        const response = await retrySharedRequest(() => api.get<unknown, ApiEnvelope<{
             faculty: Faculty[];
             subjects: Subject[];
             classrooms: Classroom[];
             semesters: Semester[];
             timeSlots: TimeSlot[];
             timetableEntries: TimetableEntry[];
+            notifications: Notification[];
             collegeConfig: CollegeConfig | null;
-        }>>('/sync');
+        }>>('/sync'));
         return response.data;
     },
 
@@ -291,9 +314,10 @@ export const syncAPI = {
         semesters: Semester[];
         timeSlots: TimeSlot[];
         timetableEntries: TimetableEntry[];
+        notifications: Notification[];
         collegeConfig: CollegeConfig;
     }) => {
-        const response = await api.post<unknown, ApiEnvelope<null>>('/sync', state);
+        const response = await retrySharedRequest(() => api.post<unknown, ApiEnvelope<null>>('/sync', state));
         return response.data;
     },
 };

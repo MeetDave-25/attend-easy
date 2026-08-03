@@ -15,7 +15,7 @@ const TimetableGeneratorV2 = () => {
   const store = useTimetableStore();
   const { 
     collegeConfig, faculty, subjects, classrooms, semesters, timeSlots, leaveEntries,
-    isGenerating, setIsGenerating, setTimetableEntries, setGenerationResult, setConflicts,
+    isGenerating, setIsGenerating, setTimetableEntries, setGenerationResult, setConflicts, addNotification,
     generationResult, conflicts, timetableEntries
   } = store;
 
@@ -90,6 +90,12 @@ const TimetableGeneratorV2 = () => {
         setConflicts(result.conflicts);
         
         if (result.success) {
+          addNotification({
+            type: "timetable_published",
+            title: "Timetable updated",
+            message: "A new conflict-free timetable is now available. Open your schedule to see your current classes.",
+            forRole: "all",
+          });
           toast.success("Timetable generated successfully with ZERO conflicts!");
         } else {
           const errors = result.conflicts.filter(c => c.severity === 'error').length;

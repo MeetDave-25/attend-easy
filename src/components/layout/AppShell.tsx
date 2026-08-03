@@ -18,6 +18,8 @@ import TimetableViews from "../timetable/TimetableViews";
 import ConflictPanel from "../timetable/ConflictPanel";
 import ExcelImportModal from "../shared/ExcelImportModal";
 import TimetableDownload from "../export/TimetableDownload";
+import NotificationCenter from "../notifications/NotificationCenter";
+import FacultyPortal from "@/pages/FacultyPortal";
 
 const Placeholder = ({ title, desc }: { title: string; desc: string }) => (
   <div className="flex flex-col items-center justify-center h-[60vh] text-center p-8 bg-card rounded-3xl border border-border shadow-sm">
@@ -40,7 +42,7 @@ const pageVariants = {
 
 const AppShell = () => {
   const [importOpen, setImportOpen] = useState(false);
-  const { isDarkMode, conflicts } = useTimetableStore();
+  const { isDarkMode, conflicts, currentUser } = useTimetableStore();
   const location = useLocation();
 
   useEffect(() => {
@@ -77,7 +79,7 @@ const AppShell = () => {
                 >
                   <Routes>
                     <Route index element={<Navigate to="dashboard" replace />} />
-                    <Route path="dashboard" element={<DashboardOverview />} />
+                    <Route path="dashboard" element={currentUser?.role === "faculty" ? <FacultyPortal /> : <DashboardOverview />} />
                     <Route path="faculty" element={<FacultyManager />} />
                     <Route path="subjects" element={<SubjectManager />} />
                     <Route path="classrooms" element={<ClassroomManager />} />
@@ -85,7 +87,7 @@ const AppShell = () => {
                     <Route path="timeslots" element={<TimeSlotManager />} />
                     <Route path="settings" element={<CollegeSettings />} />
                     <Route path="generator" element={<TimetableGeneratorV2 />} />
-                    <Route path="timetable" element={<TimetableViews />} />
+                    <Route path="timetable" element={currentUser?.role === "faculty" ? <FacultyPortal /> : <TimetableViews />} />
                     <Route path="conflicts" element={
                       <div className="space-y-6">
                         <div>
@@ -107,7 +109,7 @@ const AppShell = () => {
                     <Route path="search" element={<Placeholder title="Timetable Search" desc="Quickly search for any faculty, subject, or classroom schedule across the entire college." />} />
                     <Route path="requests" element={<Placeholder title="Faculty Requests" desc="Manage leave requests, schedule swaps, and alternative arrangements." />} />
                     <Route path="leave" element={<Placeholder title="Leave Management" desc="Apply for leaves and track approval status." />} />
-                    <Route path="notifications" element={<Placeholder title="Notifications" desc="System alerts, schedule changes, and request updates." />} />
+                    <Route path="notifications" element={<NotificationCenter />} />
                     <Route path="reports" element={<Placeholder title="Reports & Analytics" desc="Generate detailed reports on faculty workload, room utilization, and more." />} />
                     <Route path="downloads" element={<TimetableDownload />} />
                   </Routes>

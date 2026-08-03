@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { useLocation, Link } from "react-router-dom";
 import { useTimetableStore } from "@/store/timetableStore";
 import { cn } from "@/lib/utils";
+import { notificationsForUser } from "@/lib/notifications";
 
 interface TopBarProps {
   onOpenImport?: () => void;
@@ -28,10 +29,10 @@ const tabLabels: Record<string, string> = {
 };
 
 const TopBar = ({ onOpenImport }: TopBarProps) => {
-  const { notifications, collegeConfig, isDarkMode, toggleDarkMode } = useTimetableStore();
+  const { notifications, currentUser, collegeConfig, isDarkMode, toggleDarkMode } = useTimetableStore();
   const location = useLocation();
   const activeTab = location.pathname.split("/")[2] || "dashboard";
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const unreadCount = notificationsForUser(notifications, currentUser).filter((n) => !n.isRead).length;
 
   return (
     <motion.header

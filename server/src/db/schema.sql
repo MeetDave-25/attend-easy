@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS classrooms CASCADE;
 DROP TABLE IF EXISTS subjects CASCADE;
 DROP TABLE IF EXISTS students CASCADE;
 DROP TABLE IF EXISTS faculty CASCADE;
+DROP TABLE IF EXISTS notifications CASCADE;
 DROP TABLE IF EXISTS college_config CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
@@ -29,6 +30,18 @@ CREATE TABLE users (
   avatar TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE notifications (
+  id TEXT PRIMARY KEY,
+  type VARCHAR(80) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  for_role VARCHAR(50) NOT NULL,
+  for_user_id TEXT,
+  is_read BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  scheduled_for TIMESTAMPTZ
 );
 
 CREATE TABLE students (
@@ -183,6 +196,7 @@ CREATE TABLE test_marks (
 );
 
 CREATE INDEX idx_students_year ON students(year);
+CREATE INDEX idx_notifications_scheduled_for ON notifications(scheduled_for);
 CREATE INDEX idx_subjects_year_semester ON subjects(year, semester);
 CREATE INDEX idx_attendance_sessions_subject ON attendance_sessions(subject_id);
 CREATE INDEX idx_attendance_records_student ON attendance_records(student_id);

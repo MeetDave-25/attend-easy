@@ -210,6 +210,8 @@ export interface Notification {
   forUserId?: string;
   isRead: boolean;
   createdAt: string;
+  // A future time means the announcement stays hidden until that time.
+  scheduledFor?: string;
 }
 
 // --- Reports ---

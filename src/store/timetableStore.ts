@@ -100,6 +100,7 @@ interface TimetableState {
     semesters?: Semester[];
     timeSlots?: TimeSlot[];
     timetableEntries?: TimetableEntry[];
+    notifications?: Notification[];
   }) => void;
 
   // Actions — Requests
@@ -296,6 +297,7 @@ export const useTimetableStore = create<TimetableState>()(
         } : {}),
         ...(Array.isArray(data.timeSlots) ? { timeSlots: data.timeSlots } : {}),
         ...(Array.isArray(data.timetableEntries) ? { timetableEntries: data.timetableEntries } : {}),
+        ...(Array.isArray(data.notifications) ? { notifications: data.notifications } : {}),
         generationResult: null,
         conflicts: [],
       })),

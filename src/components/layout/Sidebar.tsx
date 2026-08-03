@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useTimetableStore } from "@/store/timetableStore";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/utils";
+import { notificationsForUser } from "@/lib/notifications";
 import { toast } from "sonner";
 import { NavLink } from "../NavLink";
 
@@ -74,7 +75,7 @@ const Sidebar = ({ onOpenImport }: SidebarProps) => {
   const location = useLocation();
   const activeTab = location.pathname.split("/")[2] || "dashboard";
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const unreadCount = notificationsForUser(notifications, currentUser).filter((n) => !n.isRead).length;
 
   useEffect(() => {
     document.documentElement.classList.toggle("sidebar-collapsed", isCollapsed);

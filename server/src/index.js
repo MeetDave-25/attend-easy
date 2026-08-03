@@ -27,8 +27,17 @@ if (configuredVercelOrigin && !allowedOrigins.includes(configuredVercelOrigin)) 
 
 const isAllowedOrigin = (origin) => {
     if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return true;
-    // Support Vercel preview deployments without opening CORS to arbitrary sites.
-    return /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
+
+    try {
+        const url = new URL(origin);
+        // The API is protected by bearer-token authentication. Accept secure
+        // browser origins so the same shared workspace works from Vercel's
+        // production/preview URLs and a college's custom HTTPS domain.
+        if (url.protocol === 'https:') return true;
+        return url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
+    } catch {
+        return false;
+    }
 };
 
 app.use(cors({

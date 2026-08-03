@@ -75,6 +75,7 @@ const App = () => {
         semesters: state.semesters,
         timeSlots: state.timeSlots,
         timetableEntries: state.timetableEntries,
+        notifications: state.notifications,
         collegeConfig: state.collegeConfig,
       };
     };
@@ -86,7 +87,8 @@ const App = () => {
       state.classrooms.length > 0 ||
       state.semesters.length > 0 ||
       state.timeSlots.length > 0 ||
-      state.timetableEntries.length > 0;
+      state.timetableEntries.length > 0 ||
+      state.notifications.length > 0;
 
     const saveToServer = async (revision = localRevision) => {
       if (isDisposed || !isHydrated || loadInProgress) return;
@@ -105,7 +107,8 @@ const App = () => {
         state.classrooms !== previousState.classrooms ||
         state.semesters !== previousState.semesters ||
         state.timeSlots !== previousState.timeSlots ||
-        state.timetableEntries !== previousState.timetableEntries;
+        state.timetableEntries !== previousState.timetableEntries ||
+        state.notifications !== previousState.notifications;
       if (!changed) return;
 
       if (!applyingRemoteState) localRevision += 1;
@@ -124,6 +127,7 @@ const App = () => {
       try {
         const remote = await syncAPI.getState();
         if (isDisposed) return;
+        const remoteNotifications = Array.isArray(remote.notifications) ? remote.notifications : [];
 
         const localState = useTimetableStore.getState();
         const remoteHasData = Boolean(
@@ -133,7 +137,8 @@ const App = () => {
           remote.classrooms.length ||
           remote.semesters.length ||
           remote.timeSlots.length ||
-          remote.timetableEntries.length
+          remote.timetableEntries.length ||
+          remoteNotifications.length
         );
 
         if (remoteHasData) {
@@ -142,6 +147,7 @@ const App = () => {
             applyingRemoteState = true;
             useTimetableStore.getState().hydrateSharedData({
               ...sharedData,
+              notifications: remoteNotifications,
               ...(collegeConfig ? { collegeConfig } : {}),
             });
             applyingRemoteState = false;
