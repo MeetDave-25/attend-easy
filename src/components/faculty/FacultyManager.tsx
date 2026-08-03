@@ -67,7 +67,7 @@ const FacultyManager = () => {
             className="pl-9 bg-background/50 border-border/50"
           />
         </div>
-        <Button variant="outline" className="gap-2 shrink-0">
+        <Button variant="outline" className="hidden gap-2 shrink-0">
           <Filter className="w-4 h-4" /> Filter
         </Button>
       </div>
@@ -111,7 +111,7 @@ const FacultyManager = () => {
               </div>
             </div>
 
-            <div className="mt-5 pt-4 border-t border-border/50 grid grid-cols-2 gap-4">
+            <div className="hidden mt-5 pt-4 border-t border-border/50 grid grid-cols-2 gap-4">
                <div>
                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Weekly Load</p>
                  <p className="text-lg font-semibold text-foreground">{f.weeklyLoad} <span className="text-sm font-normal text-muted-foreground">lectures</span></p>

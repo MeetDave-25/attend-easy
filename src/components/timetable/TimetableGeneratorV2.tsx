@@ -5,7 +5,7 @@ import { generateTimetable } from "@/lib/scheduler";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { Zap, AlertTriangle, CheckCircle2, RotateCcw, Calendar as CalendarIcon, Download } from "lucide-react";
+import { Zap, AlertTriangle, CheckCircle2, RotateCcw, Calendar as CalendarIcon, Download, Users, Building2, GraduationCap, Clock3 } from "lucide-react";
 import { motion } from "framer-motion";
 import ConflictPanel from "./ConflictPanel";
 import { downloadTimetableCsv } from "@/lib/timetableExport";
@@ -21,11 +21,13 @@ const TimetableGeneratorV2 = () => {
 
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
-  // Generation always uses the complete uploaded dataset. These fixed values
-  // keep the legacy review list in "all" mode without asking the admin to
-  // choose a faculty, room, semester, or subject first.
-  const selectedSemesterId = "all";
-  const selectedSubjectId = "all";
+  const readinessItems = [
+    { label: "Faculty", count: faculty.length, icon: Users },
+    { label: "Subjects", count: subjects.length, icon: CheckCircle2 },
+    { label: "Rooms", count: classrooms.length, icon: Building2 },
+    { label: "Semesters", count: semesters.length, icon: GraduationCap },
+    { label: "Lecture slots", count: timeSlots.length, icon: Clock3 },
+  ];
   const subjectsForReview = subjects;
   const subjectsForSemester = subjects;
 
@@ -206,11 +208,25 @@ const TimetableGeneratorV2 = () => {
               <span className="px-3 py-2 rounded-xl bg-primary/10 text-primary font-semibold text-sm">{subjects.length} subjects loaded</span>
             </div>
 
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              {readinessItems.map(({ label, count, icon: Icon }) => (
+                <div key={label} className={`rounded-2xl border p-4 text-center ${count > 0 ? "border-green-500/20 bg-green-500/5" : "border-amber-500/20 bg-amber-500/5"}`}>
+                  <Icon className={`mx-auto mb-2 h-5 w-5 ${count > 0 ? "text-green-600" : "text-amber-600"}`} />
+                  <p className="text-2xl font-bold">{count}</p>
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-muted-foreground">
+              <strong className="text-foreground">Automatic:</strong> teacher selection, leave handling, room assignment, workload balancing, subject rotation, break rules, and conflict checking.
+            </div>
+
             <div className="hidden grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-secondary/30 border border-border">
               <label className="space-y-2 text-sm font-medium">
                 <span>Semester</span>
                 <select
-                  value={selectedSemesterId}
+                  value="all"
                   onChange={() => undefined}
                   className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm"
                 >
@@ -221,7 +237,7 @@ const TimetableGeneratorV2 = () => {
               <label className="space-y-2 text-sm font-medium">
                 <span>Subject</span>
                 <select
-                  value={selectedSubjectId}
+                  value="all"
                   onChange={() => undefined}
                   className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm"
                 >
@@ -236,7 +252,7 @@ const TimetableGeneratorV2 = () => {
                 Upload or add faculty, subjects, semesters, classrooms, and lecture slots first.
               </div>
             ) : (
-              <div className="rounded-2xl border border-border overflow-hidden">
+              <div className="hidden rounded-2xl border border-border overflow-hidden">
                 <div className="grid grid-cols-3 gap-4 p-4 bg-secondary/40 text-sm font-semibold">
                   <span>Semester / Year</span><span>Subject</span><span>Automatic assignment</span>
                 </div>
@@ -262,7 +278,7 @@ const TimetableGeneratorV2 = () => {
             </div>
           </div>
 
-          <div className="flex justify-center gap-3">
+          <div className="hidden justify-center gap-3">
             <Button variant="outline" className="border-primary/20 text-primary hover:bg-primary/10" onClick={() => { store.loadDummyData(); toast.success("Dummy data loaded successfully!"); }}>
               Load Dummy Data
             </Button>

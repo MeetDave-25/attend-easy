@@ -396,6 +396,16 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
             const candidate: SlotCandidate = { slot, faculty: fac, classroom: room, score: 0 };
             candidate.score = scoreCandidate(candidate, assignments, config);
 
+            // Keep the configured subject teacher when possible, but spread
+            // work fairly when more than one eligible teacher is available.
+            if (task.subject.facultyId === fac.id) candidate.score += 14;
+            const weeklyAssigned = getFacultyWeeklyCount(assignments, fac.id);
+            const weeklyLimit = getFacultyWeeklyLimit(fac);
+            const workloadRatio = Number.isFinite(weeklyLimit)
+              ? weeklyAssigned / Math.max(weeklyLimit, 1)
+              : weeklyAssigned;
+            candidate.score -= workloadRatio * 22;
+
             const subjectAssignments = getSubjectAssignments(assignments, task.subject.id, task.divisionId);
             const dailySlots = slotsByDay[day] || [];
             const slotIndex = dailySlots.findIndex(item => item.id === slot.id);
