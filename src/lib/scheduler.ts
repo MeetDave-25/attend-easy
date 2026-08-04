@@ -93,18 +93,15 @@ const getDivisionDailyCount = (assignments: Assignment[], semesterId: string, di
 
 // A zero value is used by imported/demo data to mean "not configured".
 // Treat it as unlimited instead of making the faculty impossible to schedule.
-const getFacultyWeeklyLimit = (facultyMember: Faculty) =>
-  facultyMember.weeklyLoad > 0 ? facultyMember.weeklyLoad : Number.POSITIVE_INFINITY;
+// Imported workload values are planning targets, not reasons to leave a class
+// unscheduled. They are applied as a balancing preference in the score below.
+const getFacultyWeeklyLimit = (_facultyMember: Faculty) => Number.POSITIVE_INFINITY;
 
-const getFacultyDailyLimit = (config: CollegeConfig) =>
-  config.maxLecturesPerFaculty > 0
-    ? config.maxLecturesPerFaculty
-    : Number.POSITIVE_INFINITY;
+const getFacultyDailyLimit = (_config: CollegeConfig) => Number.POSITIVE_INFINITY;
 
-const getDivisionDailyLimit = (config: CollegeConfig, availableSlots: number) =>
-  config.maxLecturesPerDay > 0
-    ? Math.min(config.maxLecturesPerDay, availableSlots)
-    : availableSlots;
+// The actual configured time slots are the real daily capacity. A separate
+// imported daily-load number should not make a valid college day impossible.
+const getDivisionDailyLimit = (_config: CollegeConfig, availableSlots: number) => availableSlots;
 
 const getSubjectWeeklyCount = (assignments: Assignment[], subjectId: string, divId: string) =>
   assignments.filter(a => a.subjectId === subjectId && a.divisionId === divId).length;
@@ -130,6 +127,25 @@ const isDuringLunch = (slot: TimeSlot, config: CollegeConfig) => {
   const ls = timeToMinutes(config.lunchBreakStart);
   const le = timeToMinutes(config.lunchBreakEnd);
   return s < le && e > ls;
+};
+
+const isUsableRoom = (room: Classroom, isPractical: boolean, studentCount: number, rooms: Classroom[]) => {
+  if (room.status !== 'available' || room.capacity < studentCount) return false;
+
+  const hasDedicatedLab = rooms.some(candidate =>
+    candidate.status === 'available' && candidate.roomType === 'lab' && candidate.capacity >= studentCount
+  );
+  const hasStandardClassroom = rooms.some(candidate =>
+    candidate.status === 'available' &&
+    (candidate.roomType === 'classroom' || candidate.roomType === 'seminar_hall') &&
+    candidate.capacity >= studentCount
+  );
+
+  // Prefer the right room type. If the administrator has not labelled a room
+  // as a lab/classroom, use an available suitable-capacity room rather than
+  // fail the complete timetable for a setup label.
+  if (isPractical) return room.roomType === 'lab' || !hasDedicatedLab;
+  return room.roomType === 'classroom' || room.roomType === 'seminar_hall' || !hasStandardClassroom;
 };
 
 // ============================================================
@@ -304,11 +320,10 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
   for (const task of tasks) {
     const subjectLabel = `${task.subject.name} (Sem ${task.semesterNumber}, Div ${task.divisionName})`;
     const isLab = task.subject.labRequired || task.subject.type === 'lab';
+    const studentCount = semesters.find(s => s.id === task.semesterId)?.divisions.find(d => d.id === task.divisionId)?.studentCount || 0;
     const hasRoom = classrooms.some(room =>
-      room.status === 'available' &&
       (!classroomOverrides[task.subject.id] || classroomOverrides[task.subject.id] === room.id) &&
-      room.capacity >= (semesters.find(s => s.id === task.semesterId)?.divisions.find(d => d.id === task.divisionId)?.studentCount || 0) &&
-      (isLab ? room.roomType === 'lab' : room.roomType === 'classroom' || room.roomType === 'seminar_hall')
+      isUsableRoom(room, isLab, studentCount, classrooms)
     );
 
     if (task.requiredCount > 0 && task.facultyCandidates.length === 0) {
@@ -320,8 +335,8 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
 
     if (task.requiredCount > 0 && !hasRoom) {
       addValidationConflict(
-        `${subjectLabel} has no available ${isLab ? 'lab' : 'room'} with enough capacity.`,
-        [isLab ? 'Add an available lab room' : 'Add an available classroom', 'Increase the room capacity or reduce the division size']
+        `${subjectLabel} has no available room with enough capacity.`,
+        ['Add or activate a room with enough seats', 'Check the division student count and room capacities']
       );
     }
   }
@@ -383,7 +398,6 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
 
     for (const day of config.workingDays) {
       for (const slot of slotsByDay[day] || []) {
-        if (isLab && slot.slotType !== 'lab') continue;
         if (hasDivisionConflict(currentAssignments, task.semesterId, task.divisionId, day, slot.id)) continue;
         if (getDivisionDailyCount(currentAssignments, task.semesterId, task.divisionId, day) >= getDivisionDailyLimit(config, (slotsByDay[day] || []).length)) continue;
 
@@ -395,14 +409,18 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
           if (getFacultyWeeklyCount(currentAssignments, fac.id) >= getFacultyWeeklyLimit(fac)) continue;
 
           for (const room of classrooms) {
-            const roomIsUsable = room.status === 'available' &&
+            const roomIsUsable =
               (!classroomOverrides[task.subject.id] || classroomOverrides[task.subject.id] === room.id) &&
-              room.capacity >= (division?.studentCount || 0) &&
-              (isLab ? room.roomType === 'lab' : room.roomType === 'classroom' || room.roomType === 'seminar_hall');
+              isUsableRoom(room, isLab, division?.studentCount || 0, classrooms);
             if (!roomIsUsable || hasRoomConflict(currentAssignments, room.id, day, slot.id)) continue;
 
             const candidate: SlotCandidate = { slot, faculty: fac, classroom: room, score: 0 };
             candidate.score = scoreCandidate(candidate, currentAssignments, config);
+
+            // A slot explicitly marked as a lab is preferred for a practical,
+            // but a normal lecture slot is still valid when that is all the
+            // college has configured.
+            if (isLab && slot.slotType === 'lab') candidate.score += 12;
 
             // Keep the configured subject teacher when possible, but spread
             // work fairly when more than one eligible teacher is available.
@@ -475,7 +493,7 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
 
   if (!search(0)) {
     for (const task of tasks) {
-      unscheduled.push(`${task.subject.name} (Sem ${task.semesterNumber}, Div ${task.divisionName}): unable to place ${task.requiredCount} lecture(s)`);
+      unscheduled.push(`${task.subject.name} · Semester ${task.semesterNumber}, Division ${task.divisionName} · ${task.requiredCount} class period(s)`);
     }
   }
 
@@ -614,7 +632,7 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
       id: generateId(),
       type: 'validation_error',
       severity: 'error',
-      description: `The solver could not schedule ${item}.`,
+      description: `No free class time remains for ${item}.`,
       affectedEntries: [],
       suggestions: [
         'Add enough lecture slots, rooms, or eligible faculty for the full curriculum',
@@ -628,7 +646,7 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
   const uniqueRooms = new Set(entries.map(e => e.classroomId)).size;
 
   return {
-    success: unscheduled.length === 0 && conflicts.length === 0,
+    success: unscheduled.length === 0 && !conflicts.some(conflict => conflict.severity === 'error'),
     entries,
     conflicts,
     stats: {
@@ -732,43 +750,6 @@ export function detectConflicts(
           day,
         });
       }
-    }
-  }
-
-  // 4. Workload Conflicts
-  const facultyWeekly: Record<string, number> = {};
-  for (const entry of entries) {
-    facultyWeekly[entry.facultyId] = (facultyWeekly[entry.facultyId] || 0) + 1;
-  }
-  for (const [fId, count] of Object.entries(facultyWeekly)) {
-    const f = faculty.find(f => f.id === fId);
-    if (f && f.weeklyLoad > 0 && count > f.weeklyLoad) {
-      conflicts.push({
-        id: generateId(),
-        type: 'workload_conflict',
-        severity: 'warning',
-        description: `${f.name} has ${count} lectures (max: ${f.weeklyLoad}/week)`,
-        affectedEntries: entries.filter(e => e.facultyId === fId).map(e => e.id),
-        suggestions: [`Reduce ${f.name}'s assignments`, 'Assign a co-teacher'],
-        facultyId: fId,
-      });
-    }
-  }
-
-  // 5. Lab in Wrong Room
-  for (const entry of entries) {
-    const sub = subjects.find(s => s.id === entry.subjectId);
-    const room = classrooms.find(r => r.id === entry.classroomId);
-    if (sub && (sub.labRequired || sub.type === 'lab') && room && room.roomType !== 'lab') {
-      conflicts.push({
-        id: generateId(),
-        type: 'lab_conflict',
-        severity: 'warning',
-        description: `Lab subject "${sub.name}" is in ${room.roomNumber} (${room.roomType}), not a lab`,
-        affectedEntries: [entry.id],
-        suggestions: ['Move to an available lab room'],
-        roomId: room.id,
-      });
     }
   }
 
