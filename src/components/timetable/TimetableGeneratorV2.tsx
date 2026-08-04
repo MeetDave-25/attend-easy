@@ -48,15 +48,15 @@ const TimetableGeneratorV2 = () => {
 
     setIsGenerating(true);
     setProgress(0);
-    setStatusText("Initializing scheduling engine...");
+    setStatusText("Preparing your college rules...");
 
     // Simulate progress for UI feel
     const intervals = [
-      { p: 20, t: "Loading constraints..." },
-      { p: 40, t: "Assigning labs & practicals..." },
-      { p: 60, t: "Scheduling theory lectures..." },
-      { p: 80, t: "Checking conflicts..." },
-      { p: 95, t: "Optimizing layout..." }
+      { p: 20, t: "Reading subjects, rooms and teachers..." },
+      { p: 40, t: "Placing every required class..." },
+      { p: 60, t: "Respecting leave and room availability..." },
+      { p: 80, t: "Checking for clashes..." },
+      { p: 95, t: "Balancing the timetable with genetic optimisation..." }
     ];
 
     let delay = 0;
@@ -120,7 +120,7 @@ const TimetableGeneratorV2 = () => {
         </div>
         <h2 className="text-4xl font-bold tracking-tight">Smart Generator</h2>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Automatically create conflict-free schedules using AI-powered constraint satisfaction algorithms.
+          One-click, conflict-free timetable generation. The system covers every required class, then uses genetic optimisation to spread lectures naturally.
         </p>
       </div>
 
@@ -208,7 +208,7 @@ const TimetableGeneratorV2 = () => {
               <div>
                 <h3 className="text-2xl font-bold">Generate complete timetable</h3>
                 <p className="text-muted-foreground mt-1">
-                  The system automatically uses every uploaded subject, eligible faculty, classroom, semester, division, lecture slot, and approved leave record.
+                  Upload the college data once and press Generate. The system chooses days, times, teachers and rooms automatically while keeping every required class covered.
                 </p>
               </div>
               <span className="px-3 py-2 rounded-xl bg-primary/10 text-primary font-semibold text-sm">{subjects.length} subjects loaded</span>
@@ -225,7 +225,7 @@ const TimetableGeneratorV2 = () => {
             </div>
 
             <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-muted-foreground">
-              <strong className="text-foreground">Automatic:</strong> teacher selection, leave handling, room assignment, workload balancing, subject rotation, break rules, and conflict checking.
+              <strong className="text-foreground">Automatic:</strong> teacher selection, leave handling, room assignment, workload balancing, subject rotation, break rules, coverage checking, and genetic timetable balancing.
             </div>
 
             <div className="hidden grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-secondary/30 border border-border">

@@ -1,13 +1,14 @@
 /**
  * Smart College Timetable Scheduling Engine v3.0
- * Algorithm: Constraint Satisfaction with Priority Heuristics and Backtracking
+ * Algorithm: Constraint Satisfaction + Genetic Optimisation
  * 
  * Strategy:
  * 1. Sort subjects by difficulty-to-schedule (most constrained first) — MRV heuristic
  * 2. Expand each weekly requirement into a scheduling task
  * 3. Try the best available slot first (LCV-inspired scoring)
  * 4. Backtrack when a later task cannot be placed
- * 5. Post-process: detect and report all conflicts
+ * 5. Evolve valid schedules to improve distribution without breaking hard rules
+ * 6. Post-process: detect and report all conflicts
  */
 
 import {
@@ -336,8 +337,12 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
 
       if (required > capacity) {
         addValidationConflict(
-          `Semester ${semester.number}, Division ${division.name} needs ${required} lectures but only ${capacity} student slots are available.`,
-          ['Add more working slots or days', 'Reduce lectures per week', 'Increase the student daily slot limit']
+          `Semester ${semester.number}, Division ${division.name} needs ${required} weekly classes, but the current timetable has space for only ${capacity}.`,
+          [
+            'Add enough lecture slots or working days for the complete curriculum',
+            'Increase the daily class limit only if your college timetable permits it',
+            'The generator will not remove required subject classes automatically',
+          ]
         );
       }
     }
@@ -366,7 +371,10 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
   let searchNodes = 0;
   const maxSearchNodes = 150_000;
 
-  const getCandidates = (task: (typeof tasks)[number]): SlotCandidate[] => {
+  const getCandidates = (
+    task: (typeof tasks)[number],
+    currentAssignments: Assignment[] = assignments
+  ): SlotCandidate[] => {
     const candidates: SlotCandidate[] = [];
     const isLab = task.subject.labRequired || task.subject.type === 'lab';
     const division = semesters
@@ -376,37 +384,37 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     for (const day of config.workingDays) {
       for (const slot of slotsByDay[day] || []) {
         if (isLab && slot.slotType !== 'lab') continue;
-        if (hasDivisionConflict(assignments, task.semesterId, task.divisionId, day, slot.id)) continue;
-        if (getDivisionDailyCount(assignments, task.semesterId, task.divisionId, day) >= getDivisionDailyLimit(config, (slotsByDay[day] || []).length)) continue;
+        if (hasDivisionConflict(currentAssignments, task.semesterId, task.divisionId, day, slot.id)) continue;
+        if (getDivisionDailyCount(currentAssignments, task.semesterId, task.divisionId, day) >= getDivisionDailyLimit(config, (slotsByDay[day] || []).length)) continue;
 
         for (const fac of task.facultyCandidates) {
           if (isFacultyOnLeave(fac.id, day, leaveEntries)) continue;
           if (isFacultyUnavailable(fac, slot.id)) continue;
-          if (hasFacultyConflict(assignments, fac.id, day, slot.id)) continue;
-          if (getFacultyDailyCount(assignments, fac.id, day) >= getFacultyDailyLimit(config)) continue;
-          if (getFacultyWeeklyCount(assignments, fac.id) >= getFacultyWeeklyLimit(fac)) continue;
+          if (hasFacultyConflict(currentAssignments, fac.id, day, slot.id)) continue;
+          if (getFacultyDailyCount(currentAssignments, fac.id, day) >= getFacultyDailyLimit(config)) continue;
+          if (getFacultyWeeklyCount(currentAssignments, fac.id) >= getFacultyWeeklyLimit(fac)) continue;
 
           for (const room of classrooms) {
             const roomIsUsable = room.status === 'available' &&
               (!classroomOverrides[task.subject.id] || classroomOverrides[task.subject.id] === room.id) &&
               room.capacity >= (division?.studentCount || 0) &&
               (isLab ? room.roomType === 'lab' : room.roomType === 'classroom' || room.roomType === 'seminar_hall');
-            if (!roomIsUsable || hasRoomConflict(assignments, room.id, day, slot.id)) continue;
+            if (!roomIsUsable || hasRoomConflict(currentAssignments, room.id, day, slot.id)) continue;
 
             const candidate: SlotCandidate = { slot, faculty: fac, classroom: room, score: 0 };
-            candidate.score = scoreCandidate(candidate, assignments, config);
+            candidate.score = scoreCandidate(candidate, currentAssignments, config);
 
             // Keep the configured subject teacher when possible, but spread
             // work fairly when more than one eligible teacher is available.
             if (task.subject.facultyId === fac.id) candidate.score += 14;
-            const weeklyAssigned = getFacultyWeeklyCount(assignments, fac.id);
+            const weeklyAssigned = getFacultyWeeklyCount(currentAssignments, fac.id);
             const weeklyLimit = getFacultyWeeklyLimit(fac);
             const workloadRatio = Number.isFinite(weeklyLimit)
               ? weeklyAssigned / Math.max(weeklyLimit, 1)
               : weeklyAssigned;
             candidate.score -= workloadRatio * 22;
 
-            const subjectAssignments = getSubjectAssignments(assignments, task.subject.id, task.divisionId);
+            const subjectAssignments = getSubjectAssignments(currentAssignments, task.subject.id, task.divisionId);
             const dailySlots = slotsByDay[day] || [];
             const slotIndex = dailySlots.findIndex(item => item.id === slot.id);
             const dayIndex = config.workingDays.indexOf(day);
@@ -424,7 +432,7 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
             // Strongly prefer one lecture per subject per day when possible.
             // The candidate is kept as a fallback for subjects that genuinely
             // need more lectures than the number of working days.
-            if (hasSameSubjectSameDay(assignments, task.subject.id, task.divisionId, day)) {
+            if (hasSameSubjectSameDay(currentAssignments, task.subject.id, task.divisionId, day)) {
               candidate.score -= 90;
             }
             // Avoid repeating the same time position across different days.
@@ -471,7 +479,119 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     }
   }
 
-  // ---- Step 5: Convert to TimetableEntry ----
+  // ---- Step 5: Genetic optimisation of valid schedules ----
+  // Backtracking above creates a fully valid timetable first. The genetic pass
+  // never accepts an invalid placement: its chromosome mutations and crossover
+  // both use getCandidates(), so faculty, room, division, leave and break rules
+  // remain protected while the timetable becomes more naturally distributed.
+  const toAssignment = (task: (typeof tasks)[number], candidate: SlotCandidate): Assignment => ({
+    subjectId: task.subject.id,
+    facultyId: candidate.faculty.id,
+    classroomId: candidate.classroom.id,
+    semesterId: task.semesterId,
+    divisionId: task.divisionId,
+    day: candidate.slot.day,
+    timeSlotId: candidate.slot.id,
+    startTime: candidate.slot.startTime,
+    endTime: candidate.slot.endTime,
+  });
+
+  const samePlacement = (assignment: Assignment, candidate: SlotCandidate) =>
+    assignment.timeSlotId === candidate.slot.id &&
+    assignment.facultyId === candidate.faculty.id &&
+    assignment.classroomId === candidate.classroom.id;
+
+  const cloneChromosome = (chromosome: Assignment[]) => chromosome.map(assignment => ({ ...assignment }));
+
+  const mutateChromosome = (source: Assignment[], mutations: number): Assignment[] => {
+    const chromosome = cloneChromosome(source);
+    for (let attempt = 0; attempt < mutations; attempt += 1) {
+      const index = Math.floor(Math.random() * chromosome.length);
+      const remaining = chromosome.filter((_, itemIndex) => itemIndex !== index);
+      const candidates = getCandidates(units[index], remaining);
+      if (candidates.length === 0) continue;
+
+      // Choose from the best options, rather than always the first one, to
+      // create useful variation in a repeatable conflict-free population.
+      const choiceRange = Math.min(candidates.length, 8);
+      const candidate = candidates[Math.floor(Math.random() * choiceRange)];
+      chromosome[index] = toAssignment(units[index], candidate);
+    }
+    return chromosome;
+  };
+
+  const chromosomeFitness = (chromosome: Assignment[]) => {
+    let score = 100_000;
+    const subjectDayCount = new Map<string, number>();
+    const subjectTimeCount = new Map<string, number>();
+    const facultyCount = new Map<string, number>();
+
+    for (const assignment of chromosome) {
+      const subjectDayKey = `${assignment.subjectId}:${assignment.divisionId}:${assignment.day}`;
+      const subjectTimeKey = `${assignment.subjectId}:${assignment.divisionId}:${assignment.startTime}`;
+      subjectDayCount.set(subjectDayKey, (subjectDayCount.get(subjectDayKey) || 0) + 1);
+      subjectTimeCount.set(subjectTimeKey, (subjectTimeCount.get(subjectTimeKey) || 0) + 1);
+      facultyCount.set(assignment.facultyId, (facultyCount.get(assignment.facultyId) || 0) + 1);
+    }
+
+    // Spread a subject through the week and rotate its time. These are soft
+    // preferences; the strict rules were already enforced before this phase.
+    for (const count of subjectDayCount.values()) score -= Math.max(0, count - 1) * 180;
+    for (const count of subjectTimeCount.values()) score -= Math.max(0, count - 1) * 45;
+
+    const loads = [...facultyCount.values()];
+    if (loads.length > 1) {
+      const average = loads.reduce((sum, load) => sum + load, 0) / loads.length;
+      score -= loads.reduce((sum, load) => sum + Math.pow(load - average, 2), 0) * 8;
+    }
+
+    return score;
+  };
+
+  const crossover = (left: Assignment[], right: Assignment[]): Assignment[] | null => {
+    const child: Assignment[] = [];
+    for (let index = 0; index < units.length; index += 1) {
+      const candidates = getCandidates(units[index], child);
+      if (candidates.length === 0) return null;
+
+      const inherited = Math.random() < 0.5 ? left[index] : right[index];
+      const inheritedCandidate = candidates.find(candidate => samePlacement(inherited, candidate));
+      const fallback = candidates[Math.floor(Math.random() * Math.min(candidates.length, 4))];
+      child.push(toAssignment(units[index], inheritedCandidate || fallback));
+    }
+    return child;
+  };
+
+  if (assignments.length === units.length && units.length > 1) {
+    const populationSize = 12;
+    const generations = 24;
+    let population: Assignment[][] = [cloneChromosome(assignments)];
+
+    while (population.length < populationSize) {
+      population.push(mutateChromosome(assignments, 1 + Math.floor(Math.random() * 4)));
+    }
+
+    for (let generation = 0; generation < generations; generation += 1) {
+      const ranked = [...population].sort((left, right) => chromosomeFitness(right) - chromosomeFitness(left));
+      const elites = ranked.slice(0, 3);
+      const nextPopulation = elites.map(cloneChromosome);
+
+      while (nextPopulation.length < populationSize) {
+        const parentA = elites[Math.floor(Math.random() * elites.length)];
+        const parentB = elites[Math.floor(Math.random() * elites.length)];
+        const child = crossover(parentA, parentB) || cloneChromosome(parentA);
+        nextPopulation.push(mutateChromosome(child, 1 + Math.floor(Math.random() * 3)));
+      }
+      population = nextPopulation;
+    }
+
+    const best = population.reduce((winner, chromosome) =>
+      chromosomeFitness(chromosome) > chromosomeFitness(winner) ? chromosome : winner
+    );
+    assignments.splice(0, assignments.length, ...best);
+  }
+
+  // ---- Step 6: Convert to TimetableEntry ----
   const entries: TimetableEntry[] = assignments.map(a => ({
     id: generateId(),
     timeSlotId: a.timeSlotId,
@@ -486,7 +606,7 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     isPublished: false,
   }));
 
-  // ---- Step 6: Conflict Detection ----
+  // ---- Step 7: Conflict Detection ----
   const conflicts = detectConflicts(entries, faculty, classrooms, subjects, semesters, config);
 
   for (const item of unscheduled) {
@@ -497,9 +617,9 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
       description: `The solver could not schedule ${item}.`,
       affectedEntries: [],
       suggestions: [
-        'Add more available time slots, rooms, or eligible faculty',
-        'Reduce the required lectures per week',
-        'Review faculty unavailability and workload limits',
+        'Add enough lecture slots, rooms, or eligible faculty for the full curriculum',
+        'Review faculty leave, unavailable slots, and workload limits',
+        'The system keeps all required subject lectures; it does not reduce coverage automatically',
       ],
     });
   }
