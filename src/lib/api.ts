@@ -7,11 +7,17 @@ const configuredApiUrl = (rawApiUrl || defaultApiOrigin).replace(/\/$/, '');
 const isPlaceholderApiUrl = /your-api-domain\.com|your-render-service|example\.com/i.test(configuredApiUrl);
 // Accept either the Render origin or the full API base URL from Vercel.
 const API_URL = configuredApiUrl.endsWith('/api') ? configuredApiUrl : `${configuredApiUrl}/api`;
-const SYNC_RETRY_DELAY_MS = 1500;
+const SYNC_RETRY_DELAY_MS = 800;
+// How long to wait for a sync ping before giving up silently.
+// Shorter than the main API timeout so the app loads fast even when offline.
+const SYNC_TIMEOUT_MS = 8000;
 
-const assertApiConfigured = () => {
-    if (isPlaceholderApiUrl) {
-        throw new Error('VITE_API_URL still uses a placeholder. Set it to your deployed backend URL, for example https://your-service.onrender.com/api.');
+const assertApiConfigured = (url?: string) => {
+    // Sync requests are allowed to fail silently — the app works from localStorage.
+    // Only block non-sync requests (login, student data, etc.) when no backend is set.
+    const isSyncRequest = url?.includes('/sync');
+    if (isPlaceholderApiUrl && !isSyncRequest) {
+        throw new Error('VITE_API_URL still uses a placeholder. Set it to your deployed backend URL.');
     }
 };
 
@@ -41,11 +47,11 @@ const retrySharedRequest = async <T>(request: () => Promise<T>): Promise<T> => {
     try {
         return await request();
     } catch (error) {
-        // Retry only a connection failure. Validation, authentication and server
-        // errors are returned immediately so they are never hidden from the user.
-        if (!(error instanceof Error) || !error.message.includes('No response from server')) {
-            throw error;
-        }
+        // Only retry on network-level failures (server unreachable / sleeping).
+        // Auth, validation, and server errors are returned immediately.
+        const isNetworkError = error instanceof Error &&
+            (error.message.includes('No response from server') || error.message.includes('timeout'));
+        if (!isNetworkError) throw error;
 
         await wait(SYNC_RETRY_DELAY_MS);
         return request();
@@ -53,7 +59,7 @@ const retrySharedRequest = async <T>(request: () => Promise<T>): Promise<T> => {
 };
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-    assertApiConfigured();
+    assertApiConfigured(config.url);
     return config;
 });
 
@@ -73,23 +79,29 @@ api.interceptors.request.use(
 api.interceptors.response.use(
     (response: AxiosResponse) => response.data,
     (error: AxiosError) => {
-        console.error('API Error:', error);
-
-        // Handle 401 Unauthorized
-        if (error.response?.status === 401) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            if (!window.location.pathname.includes('/login')) {
-                window.location.href = '/login';
-            }
-        }
+        const isSyncCall = error.config?.url?.includes('/sync');
 
         if (error.response) {
+            // Real server error (4xx / 5xx) — always log
+            if (!isSyncCall) console.error('API Error:', error);
             const errData = error.response.data as any;
-            throw new Error(errData?.error?.message || 'Server error occurred');
+
+            // Handle 401 Unauthorized
+            if (error.response.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                if (!window.location.pathname.includes('/login')) {
+                    window.location.href = '/login';
+                }
+            }
+
+            throw new Error(errData?.error?.message || errData?.message || 'Server error occurred');
         } else if (error.request) {
+            // Network error — backend unreachable. Only warn for non-sync calls.
+            if (!isSyncCall) console.warn('Network error (backend unreachable):', error.message);
             throw new Error('No response from server. Please check if the backend is running.');
         } else {
+            if (!isSyncCall) console.error('API Error:', error);
             throw new Error(error.message || 'An unexpected error occurred');
         }
     }
@@ -303,7 +315,7 @@ export const syncAPI = {
             timetableEntries: TimetableEntry[];
             notifications: Notification[];
             collegeConfig: CollegeConfig | null;
-        }>>('/sync'));
+        }>>('/sync', { timeout: SYNC_TIMEOUT_MS }));
         return response.data;
     },
 
@@ -317,7 +329,7 @@ export const syncAPI = {
         notifications: Notification[];
         collegeConfig: CollegeConfig;
     }) => {
-        const response = await retrySharedRequest(() => api.post<unknown, ApiEnvelope<null>>('/sync', state));
+        const response = await retrySharedRequest(() => api.post<unknown, ApiEnvelope<null>>('/sync', state, { timeout: SYNC_TIMEOUT_MS }));
         return response.data;
     },
 };

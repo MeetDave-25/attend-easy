@@ -10,11 +10,13 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 3000
       - key: DATABASE_URL
-        sync: false
+        value: postgresql://neondb_owner:npg_Wkd0qF9ulUXI@ep-polished-river-ayi1c9vn-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRY
         value: 24h
       - key: ALLOWED_ORIGINS
-        sync: false
+        value: https://attend-easy-three.vercel.app,http://localhost:5173

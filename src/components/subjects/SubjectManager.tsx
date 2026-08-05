@@ -197,17 +197,29 @@ const SubjectManager = () => {
                 <Label>Required Lectures Per Week</Label>
                 <Input type="number" value={formData.lectureCountPerWeek} onChange={e => setFormData({...formData, lectureCountPerWeek: parseInt(e.target.value)})} />
               </div>
-              <div className="space-y-2 col-span-2">
-                <Label>Assign Faculty (Optional)</Label>
+              <div className="space-y-2 col-span-2 pt-2 border-t border-border">
+                <Label className="flex items-center gap-1.5">
+                  Assigned Faculty
+                  <span className="ml-1 text-xs font-normal text-muted-foreground">(strict — only this teacher will ever be scheduled)</span>
+                </Label>
                 <Select value={formData.facultyId || "none"} onValueChange={v => setFormData({...formData, facultyId: v === "none" ? undefined : v})}>
-                  <SelectTrigger><SelectValue placeholder="Select faculty" /></SelectTrigger>
+                  <SelectTrigger className={!formData.facultyId ? "border-amber-500/40" : "border-green-500/40"}>
+                    <SelectValue placeholder="Select faculty" />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Unassigned / Auto-assign</SelectItem>
-                    {faculty.map(f => (
-                      <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                    <SelectItem value="none">⚠ Unassigned — any eligible faculty</SelectItem>
+                    {faculty.filter(f => f.status === "active").map(f => (
+                      <SelectItem key={f.id} value={f.id}>
+                        {f.name} {f.type === "visiting" ? "(Visiting)" : ""}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {!formData.facultyId && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    ⚠ No faculty assigned — for best results, assign a specific faculty to each subject.
+                  </p>
+                )}
               </div>
             </div>
             <DialogFooter className="mt-6">

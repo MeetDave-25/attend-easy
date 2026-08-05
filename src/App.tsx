@@ -12,7 +12,7 @@ import ModernSplashScreen from "./components/shared/ModernSplashScreen";
 import ErrorBoundary from "./components/shared/ErrorBoundary";
 import { useTimetableStore } from "./store/timetableStore";
 import { syncAPI } from "./lib/api";
-import { toast } from "sonner";
+
 
 const queryClient = new QueryClient();
 const SPLASH_SESSION_KEY = "attendeasy_splash_seen";
@@ -55,14 +55,14 @@ const App = () => {
     let applyingRemoteState = false;
 
     const reportSyncError = (message: string, error: unknown) => {
-      console.warn(message, error);
+      // Silently log — the app works from localStorage when the server is unreachable.
+      // We intentionally do NOT show a toast here because:
+      //   1. The timetable system works fully offline using Zustand + localStorage
+      //   2. Free hosting backends (Render, Railway) go to sleep and take time to wake
+      //   3. Showing an error on every load is confusing when the app still works fine
       if (!syncErrorShown) {
         syncErrorShown = true;
-        const detail = error instanceof Error ? error.message : "Unknown API error";
-        toast.error(`Shared data sync failed: ${detail}`, {
-          duration: 9000,
-          description: "Check VITE_API_URL, backend CORS, and the deployed API health endpoint.",
-        });
+        console.warn('[Sync]', message, error instanceof Error ? error.message : error);
       }
     };
 

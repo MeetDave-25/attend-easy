@@ -1,14 +1,15 @@
 /**
- * Smart College Timetable Scheduling Engine v3.0
+ * Smart College Timetable Scheduling Engine v4.0
  * Algorithm: Constraint Satisfaction + Genetic Optimisation
- * 
- * Strategy:
- * 1. Sort subjects by difficulty-to-schedule (most constrained first) — MRV heuristic
- * 2. Expand each weekly requirement into a scheduling task
- * 3. Try the best available slot first (LCV-inspired scoring)
- * 4. Backtrack when a later task cannot be placed
- * 5. Evolve valid schedules to improve distribution without breaking hard rules
- * 6. Post-process: detect and report all conflicts
+ *
+ * Key Rules (v4 changes):
+ * - Visiting faculty  → HARD weekly cap (cannot exceed weeklyLoad)
+ * - Permanent faculty → SOFT weekly cap (prefer not to exceed weeklyLoad, but allow if no alternative)
+ * - Subject → Faculty binding is STRICT: subject.facultyId is ALWAYS used when set.
+ *   The generator NEVER reassigns a subject to a different faculty automatically.
+ *   If the designated faculty is on leave for ALL slots, the lecture is left unscheduled
+ *   and a clear error is shown.
+ * - Genetic phase: never changes faculty assignment, only re-slots days/times
  */
 
 import {
@@ -33,7 +34,6 @@ export interface SchedulerInput {
   semesterFilter?: string;
   subjectFilter?: string;
   dayFilter?: string;
-  facultyOverrides?: Record<string, string>;
   classroomOverrides?: Record<string, string>;
 }
 
@@ -53,8 +53,28 @@ interface SlotCandidate {
   slot: TimeSlot;
   faculty: Faculty;
   classroom: Classroom;
-  score: number; // higher = better
+  score: number;
 }
+
+// ============================================================
+// Workload helpers
+// ============================================================
+
+/** Returns the hard weekly lecture cap for a faculty member.
+ *  - Visiting: weeklyLoad is a hard limit (never exceed)
+ *  - Permanent: weeklyLoad is a soft preference; hard cap is very large
+ */
+const getFacultyHardWeeklyLimit = (f: Faculty): number => {
+  if (f.type === 'visiting') {
+    return f.weeklyLoad > 0 ? f.weeklyLoad : 20;
+  }
+  // Permanent: hard cap only kicks in at a very high number (don't block)
+  return f.weeklyLoad > 0 ? f.weeklyLoad * 3 : Number.POSITIVE_INFINITY;
+};
+
+/** Returns the SOFT weekly target — used in scoring to prefer balanced loads */
+const getFacultySoftWeeklyTarget = (f: Faculty): number =>
+  f.weeklyLoad > 0 ? f.weeklyLoad : 20;
 
 // ============================================================
 // Constraint Checkers (Pure Functions)
@@ -92,20 +112,7 @@ const getFacultyWeeklyCount = (assignments: Assignment[], fId: string) =>
 const getDivisionDailyCount = (assignments: Assignment[], semesterId: string, divisionId: string, day: string) =>
   assignments.filter(a => a.semesterId === semesterId && a.divisionId === divisionId && a.day === day).length;
 
-// A zero value is used by imported/demo data to mean "not configured".
-// Treat it as unlimited instead of making the faculty impossible to schedule.
-// Imported workload values are planning targets, not reasons to leave a class
-// unscheduled. They are applied as a balancing preference in the score below.
-const getFacultyWeeklyLimit = (_facultyMember: Faculty) => Number.POSITIVE_INFINITY;
-
-const getFacultyDailyLimit = (_config: CollegeConfig) => Number.POSITIVE_INFINITY;
-
-// The actual configured time slots are the real daily capacity. A separate
-// imported daily-load number should not make a valid college day impossible.
 const getDivisionDailyLimit = (_config: CollegeConfig, availableSlots: number) => availableSlots;
-
-const getSubjectWeeklyCount = (assignments: Assignment[], subjectId: string, divId: string) =>
-  assignments.filter(a => a.subjectId === subjectId && a.divisionId === divId).length;
 
 const getSubjectAssignments = (assignments: Assignment[], subjectId: string, divId: string) =>
   assignments.filter(a => a.subjectId === subjectId && a.divisionId === divId);
@@ -153,56 +160,69 @@ const isUsableRoom = (room: Classroom, isPractical: boolean, studentCount: numbe
     candidate.capacity >= studentCount
   );
 
-  // Prefer the right room type. If the administrator has not labelled a room
-  // as a lab/classroom, use an available suitable-capacity room rather than
-  // fail the complete timetable for a setup label.
   if (isPractical) return room.roomType === 'lab' || !hasDedicatedLab;
   return room.roomType === 'classroom' || room.roomType === 'seminar_hall' || !hasStandardClassroom;
 };
 
 // ============================================================
 // Scoring: Evaluate a candidate slot (higher = better choice)
-// LCV-inspired: penalize assignments that would over-constrain others
 // ============================================================
 
 function scoreCandidate(
   candidate: SlotCandidate,
   assignments: Assignment[],
-  config: CollegeConfig
+  config: CollegeConfig,
+  task: { subject: Subject; semesterId: string; divisionId: string },
+  slotsByDay: Record<string, TimeSlot[]>
 ): number {
   let score = 100;
 
   const { slot, faculty } = candidate;
   const day = slot.day;
 
-  // Do not always favor the first lecture. Subject-specific distribution
-  // is applied below so lectures rotate through the available time slots.
-
-  // Penalize if faculty is approaching daily limit
+  // Penalize if faculty is approaching daily load target
   const dailyCount = getFacultyDailyCount(assignments, faculty.id, day);
+  const dailyTarget = faculty.dailyLoad > 0 ? faculty.dailyLoad : config.maxLecturesPerFaculty;
   score -= dailyCount * 10;
+  if (dailyCount >= dailyTarget) score -= 40;
 
-  // Penalize if faculty has preferred slots and this isn't one
-  if (faculty.preferredSlots?.length > 0 && !faculty.preferredSlots.includes(slot.id)) {
-    score -= 5;
+  // Penalize based on how close they are to soft weekly target
+  const weeklyCount = getFacultyWeeklyCount(assignments, faculty.id);
+  const softTarget = getFacultySoftWeeklyTarget(faculty);
+  const loadRatio = weeklyCount / Math.max(softTarget, 1);
+  score -= loadRatio * 30;
+
+  // Strong bonus for preferred slots
+  if (faculty.preferredSlots?.includes(slot.id)) score += 20;
+
+  // Penalize if same subject is already on this day
+  if (hasSameSubjectSameDay(assignments, task.subject.id, task.divisionId, day)) {
+    score -= 90;
   }
 
-  // Bonus for preferred slots
-  if (faculty.preferredSlots?.includes(slot.id)) {
-    score += 15;
-  }
-
-  // Penalize assignments that cluster too many lectures in one day
-  const divDayCount = assignments.filter(
-    a => a.day === day && a.semesterId && a.timeSlotId === slot.id
+  // Spread subject across different time positions
+  const subjectAssignments = getSubjectAssignments(assignments, task.subject.id, task.divisionId);
+  const dailySlots = slotsByDay[day] || [];
+  const slotIndex = dailySlots.findIndex(item => item.id === slot.id);
+  const dayIndex = config.workingDays.indexOf(day);
+  const subjectSeed = stableHash(`${task.subject.id}:${task.divisionId}`);
+  const desiredSlotIndex = dailySlots.length > 0
+    ? (subjectSeed + dayIndex * 2) % dailySlots.length
+    : 0;
+  const sameTimeUses = subjectAssignments.filter(assignment =>
+    assignment.startTime === slot.startTime && assignment.endTime === slot.endTime
   ).length;
-  score -= divDayCount * 3;
+
+  score -= sameTimeUses * 70;
+  if (slotIndex >= 0 && dailySlots.length > 1) {
+    score -= circularDistance(slotIndex, desiredSlotIndex, dailySlots.length) * 8;
+  }
 
   return score;
 }
 
 // ============================================================
-// Main Greedy Scheduler with Backtracking Fallback
+// Main Scheduler with Backtracking + Genetic Optimisation
 // ============================================================
 
 export function generateTimetable(input: SchedulerInput): GenerationResult {
@@ -217,7 +237,6 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     semesterFilter,
     subjectFilter,
     dayFilter,
-    facultyOverrides = {},
     classroomOverrides = {},
   } = input;
 
@@ -231,13 +250,12 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     ts => (ts.slotType === 'lecture' || ts.slotType === 'lab') && !isDuringLunch(ts, config)
   );
 
-  // Group slots by day for fast lookup
+  // Group slots by day
   const slotsByDay: Record<string, TimeSlot[]> = {};
   lectureSlots.forEach(slot => {
     if (!slotsByDay[slot.day]) slotsByDay[slot.day] = [];
     slotsByDay[slot.day].push(slot);
   });
-  // Sort each day's slots by order
   Object.keys(slotsByDay).forEach(day => {
     slotsByDay[day].sort((a, b) => a.order - b.order);
   });
@@ -251,7 +269,10 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     semesterNumber: number;
     requiredCount: number;
     scheduledCount: number;
-    facultyCandidates: Faculty[]; // Pre-computed candidates
+    /** STRICT: only the designated faculty — never randomly assigned */
+    designatedFaculty: Faculty | null;
+    /** Fallback: only used if designatedFaculty is null (subject has no facultyId) */
+    fallbackFacultyCandidates: Faculty[];
   }
 
   const tasks: Task[] = [];
@@ -269,20 +290,20 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
       for (const subject of divSubjects) {
         const targetCount = Math.max(0, subject.lectureCountPerWeek ?? 0);
 
-        // Find all faculty who can teach this subject
-        let facultyCandidates: Faculty[] = [];
-        const selectedFacultyId = facultyOverrides[subject.id] || subject.facultyId;
-        const eligibleFaculty = faculty.filter(
-          f => f.status === 'active' && (f.subjectIds?.includes(subject.id) || f.subjectIds?.length === 0 || f.id === selectedFacultyId)
-        );
-        const assignedFaculty = selectedFacultyId
-          ? eligibleFaculty.find(member => member.id === selectedFacultyId)
-          : undefined;
-        // Prefer the configured teacher, but keep other eligible teachers as
-        // fallbacks when the configured teacher is on leave or unavailable.
-        facultyCandidates = assignedFaculty
-          ? [assignedFaculty, ...eligibleFaculty.filter(member => member.id !== assignedFaculty.id)]
-          : eligibleFaculty;
+        // STRICT binding: if subject has a facultyId, that faculty is THE only option
+        let designatedFaculty: Faculty | null = null;
+        let fallbackFacultyCandidates: Faculty[] = [];
+
+        if (subject.facultyId) {
+          const found = faculty.find(f => f.id === subject.facultyId && f.status === 'active');
+          designatedFaculty = found ?? null;
+          // If designated faculty exists but is inactive/not found → error will be caught in validation
+        } else {
+          // No faculty assigned → allow any active faculty who can teach this subject
+          fallbackFacultyCandidates = faculty.filter(
+            f => f.status === 'active' && (f.subjectIds?.includes(subject.id) || f.subjectIds?.length === 0)
+          );
+        }
 
         tasks.push({
           subject,
@@ -292,27 +313,23 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
           semesterNumber: semester.number,
           requiredCount: dayFilter ? Math.min(targetCount, 1) : targetCount,
           scheduledCount: 0,
-          facultyCandidates,
+          designatedFaculty,
+          fallbackFacultyCandidates,
         });
       }
     }
   }
 
-  // ---- Step 2: MRV Heuristic - Sort tasks by hardness ----
-  // Hardest first: fewest faculty candidates, highest lecture count, lab subjects
+  // ---- Step 2: Sort tasks by difficulty (hardest first) ----
   tasks.sort((a, b) => {
-    const hardnessA =
-      (1 / (a.facultyCandidates.length + 1)) * 100 +
-      a.requiredCount +
-      (a.subject.labRequired ? 20 : 0);
-    const hardnessB =
-      (1 / (b.facultyCandidates.length + 1)) * 100 +
-      b.requiredCount +
-      (b.subject.labRequired ? 20 : 0);
-    return hardnessB - hardnessA; // Hardest first
+    const availA = a.designatedFaculty ? 1 : a.fallbackFacultyCandidates.length;
+    const availB = b.designatedFaculty ? 1 : b.fallbackFacultyCandidates.length;
+    const hardnessA = (1 / (availA + 1)) * 100 + a.requiredCount + (a.subject.labRequired ? 20 : 0);
+    const hardnessB = (1 / (availB + 1)) * 100 + b.requiredCount + (b.subject.labRequired ? 20 : 0);
+    return hardnessB - hardnessA;
   });
 
-  // ---- Step 3: Validate capacity before searching ----
+  // ---- Step 3: Pre-generation validation ----
   const validationConflicts: Conflict[] = [];
   const addValidationConflict = (description: string, suggestions: string[]) => {
     validationConflicts.push({
@@ -336,23 +353,55 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     const subjectLabel = `${task.subject.name} (Sem ${task.semesterNumber}, Div ${task.divisionName})`;
     const isLab = task.subject.labRequired || task.subject.type === 'lab';
     const studentCount = semesters.find(s => s.id === task.semesterId)?.divisions.find(d => d.id === task.divisionId)?.studentCount || 0;
+
     const hasRoom = classrooms.some(room =>
       (!classroomOverrides[task.subject.id] || classroomOverrides[task.subject.id] === room.id) &&
       isUsableRoom(room, isLab, studentCount, classrooms)
     );
 
-    if (task.requiredCount > 0 && task.facultyCandidates.length === 0) {
+    if (task.requiredCount > 0 && !hasRoom) {
       addValidationConflict(
-        `${subjectLabel} has no active faculty assigned who can teach it.`,
-        ['Assign a faculty member to the subject', 'Mark the faculty as active', 'Add the subject to a faculty member\'s teaching list']
+        `${subjectLabel} has no available ${isLab ? 'lab' : 'classroom'} with enough capacity (needs ${studentCount} seats).`,
+        [`Add or activate a ${isLab ? 'lab' : 'classroom'} with at least ${studentCount} seats`, 'Check the division student count and room capacities']
       );
     }
 
-    if (task.requiredCount > 0 && !hasRoom) {
-      addValidationConflict(
-        `${subjectLabel} has no available room with enough capacity.`,
-        ['Add or activate a room with enough seats', 'Check the division student count and room capacities']
-      );
+    if (task.requiredCount > 0) {
+      if (task.subject.facultyId) {
+        // Subject has a designated faculty — check if they exist and are active
+        const designatedFaculty = faculty.find(f => f.id === task.subject.facultyId);
+        if (!designatedFaculty) {
+          addValidationConflict(
+            `${subjectLabel}: The assigned faculty no longer exists. Please reassign this subject.`,
+            ['Go to Subjects and select a new faculty for this subject']
+          );
+        } else if (designatedFaculty.status !== 'active') {
+          addValidationConflict(
+            `${subjectLabel}: ${designatedFaculty.name} is ${designatedFaculty.status === 'on-leave' ? 'on leave' : 'inactive'} and cannot be scheduled. This subject will remain unscheduled.`,
+            [`Mark ${designatedFaculty.name} as Active`, 'Or reassign this subject to another faculty in the Subjects page']
+          );
+        } else if (designatedFaculty.type === 'visiting') {
+          // Visiting faculty — check if weeklyLoad is enough for all their subjects
+          const totalNeeded = tasks
+            .filter(t => t.subject.facultyId === designatedFaculty.id)
+            .reduce((sum, t) => sum + t.requiredCount, 0);
+          const hardLimit = getFacultyHardWeeklyLimit(designatedFaculty);
+          if (totalNeeded > hardLimit) {
+            addValidationConflict(
+              `Visiting faculty ${designatedFaculty.name} is assigned ${totalNeeded} lectures/week but their weekly limit is ${hardLimit}. Some lectures will be unscheduled.`,
+              [
+                `Increase ${designatedFaculty.name}'s weekly limit to at least ${totalNeeded}`,
+                'Or reduce the lecture count for one of their subjects',
+              ]
+            );
+          }
+        }
+      } else if (task.fallbackFacultyCandidates.length === 0) {
+        addValidationConflict(
+          `${subjectLabel} has no faculty assigned and no active faculty can teach it.`,
+          ['Go to Subjects and assign a faculty member', 'Or mark an eligible faculty as Active']
+        );
+      }
     }
   }
 
@@ -367,11 +416,11 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
 
       if (required > capacity) {
         addValidationConflict(
-          `Semester ${semester.number}, Division ${division.name} needs ${required} weekly classes, but the current timetable has space for only ${capacity}.`,
+          `Semester ${semester.number}, Division ${division.name} needs ${required} lectures/week but your timetable only has ${capacity} available slots. Add more time slots or reduce lecture counts.`,
           [
-            'Add enough lecture slots or working days for the complete curriculum',
-            'Increase the daily class limit only if your college timetable permits it',
-            'The generator will not remove required subject classes automatically',
+            `You need ${required - capacity} more lecture slot(s) per week`,
+            'Add time slots in the Time Slots section',
+            'Or reduce lectureCountPerWeek on one or more subjects',
           ]
         );
       }
@@ -393,16 +442,12 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     };
   }
 
-  // ---- Step 4: Constraint search with backtracking ----
-  // The previous greedy pass committed to the first locally good slot. That
-  // can block a later subject even when a valid timetable exists. Search all
-  // feasible assignments in priority order and backtrack when a branch fails.
+  // ---- Step 4: Build units list (one unit per lecture needed) ----
   const units = tasks.flatMap(task => Array.from({ length: task.requiredCount }, () => task));
-  let searchNodes = 0;
-  const maxSearchNodes = 150_000;
 
+  // ---- Step 5: Candidate generator ----
   const getCandidates = (
-    task: (typeof tasks)[number],
+    task: Task,
     currentAssignments: Assignment[] = assignments
   ): SlotCandidate[] => {
     const candidates: SlotCandidate[] = [];
@@ -410,69 +455,43 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     const division = semesters
       .find(semester => semester.id === task.semesterId)
       ?.divisions.find(candidateDivision => candidateDivision.id === task.divisionId);
+    const studentCount = division?.studentCount || 0;
 
-    for (const day of config.workingDays) {
+    // STRICT: only use the designated faculty, or fallbacks if no designation
+    const facultyCandidates: Faculty[] = task.designatedFaculty
+      ? [task.designatedFaculty]
+      : task.fallbackFacultyCandidates;
+
+    for (const day of workingDays) {
       for (const slot of slotsByDay[day] || []) {
         if (hasDivisionConflict(currentAssignments, task.semesterId, task.divisionId, day, slot.id)) continue;
         if (getDivisionDailyCount(currentAssignments, task.semesterId, task.divisionId, day) >= getDivisionDailyLimit(config, (slotsByDay[day] || []).length)) continue;
 
-        for (const fac of task.facultyCandidates) {
+        for (const fac of facultyCandidates) {
           if (isFacultyOnLeave(fac.id, day, leaveEntries)) continue;
           if (isFacultyUnavailable(fac, slot.id)) continue;
           if (hasFacultyConflict(currentAssignments, fac.id, day, slot.id)) continue;
-          if (getFacultyDailyCount(currentAssignments, fac.id, day) >= getFacultyDailyLimit(config)) continue;
-          if (getFacultyWeeklyCount(currentAssignments, fac.id) >= getFacultyWeeklyLimit(fac)) continue;
+
+          // Daily limit check
+          const dailyTarget = fac.dailyLoad > 0 ? fac.dailyLoad : config.maxLecturesPerFaculty;
+          if (getFacultyDailyCount(currentAssignments, fac.id, day) >= dailyTarget) continue;
+
+          // Weekly limit check — HARD for visiting, soft but high for permanent
+          const weeklyCount = getFacultyWeeklyCount(currentAssignments, fac.id);
+          const hardLimit = getFacultyHardWeeklyLimit(fac);
+          if (weeklyCount >= hardLimit) continue;
 
           for (const room of classrooms) {
             const roomIsUsable =
               (!classroomOverrides[task.subject.id] || classroomOverrides[task.subject.id] === room.id) &&
-              isUsableRoom(room, isLab, division?.studentCount || 0, classrooms);
+              isUsableRoom(room, isLab, studentCount, classrooms);
             if (!roomIsUsable || hasRoomConflict(currentAssignments, room.id, day, slot.id)) continue;
 
             const candidate: SlotCandidate = { slot, faculty: fac, classroom: room, score: 0 };
-            candidate.score = scoreCandidate(candidate, currentAssignments, config);
+            candidate.score = scoreCandidate(candidate, currentAssignments, config, task, slotsByDay);
 
-            // A slot explicitly marked as a lab is preferred for a practical,
-            // but a normal lecture slot is still valid when that is all the
-            // college has configured.
             if (isLab && slot.slotType === 'lab') candidate.score += 12;
 
-            // Keep the configured subject teacher when possible, but spread
-            // work fairly when more than one eligible teacher is available.
-            if (task.subject.facultyId === fac.id) candidate.score += 14;
-            const weeklyAssigned = getFacultyWeeklyCount(currentAssignments, fac.id);
-            const weeklyLimit = getFacultyWeeklyLimit(fac);
-            const workloadRatio = Number.isFinite(weeklyLimit)
-              ? weeklyAssigned / Math.max(weeklyLimit, 1)
-              : weeklyAssigned;
-            candidate.score -= workloadRatio * 22;
-
-            const subjectAssignments = getSubjectAssignments(currentAssignments, task.subject.id, task.divisionId);
-            const dailySlots = slotsByDay[day] || [];
-            const slotIndex = dailySlots.findIndex(item => item.id === slot.id);
-            const dayIndex = config.workingDays.indexOf(day);
-            const subjectSeed = stableHash(`${task.subject.id}:${task.divisionId}`);
-            // Shift the preferred position every day. For example, a subject
-            // that lands in slot 2 on Monday is naturally encouraged toward a
-            // different slot on Tuesday instead of repeating slot 1 all week.
-            const desiredSlotIndex = dailySlots.length > 0
-              ? (subjectSeed + dayIndex * 2) % dailySlots.length
-              : 0;
-            const sameTimeUses = subjectAssignments.filter(assignment =>
-              assignment.startTime === slot.startTime && assignment.endTime === slot.endTime
-            ).length;
-
-            // Strongly prefer one lecture per subject per day when possible.
-            // The candidate is kept as a fallback for subjects that genuinely
-            // need more lectures than the number of working days.
-            if (hasSameSubjectSameDay(currentAssignments, task.subject.id, task.divisionId, day)) {
-              candidate.score -= 90;
-            }
-            // Avoid repeating the same time position across different days.
-            candidate.score -= sameTimeUses * 70;
-            if (slotIndex >= 0 && dailySlots.length > 1) {
-              candidate.score -= circularDistance(slotIndex, desiredSlotIndex, dailySlots.length) * 8;
-            }
             candidates.push(candidate);
           }
         }
@@ -481,6 +500,10 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
 
     return candidates.sort((a, b) => b.score - a.score);
   };
+
+  // ---- Step 6: Backtracking search ----
+  let searchNodes = 0;
+  const maxSearchNodes = 150_000;
 
   const search = (index: number): boolean => {
     if (index === units.length) return true;
@@ -508,16 +531,16 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
 
   if (!search(0)) {
     for (const task of tasks) {
-      unscheduled.push(`${task.subject.name} · Semester ${task.semesterNumber}, Division ${task.divisionName} · ${task.requiredCount} class period(s)`);
+      const facultyName = task.designatedFaculty?.name ||
+        (task.fallbackFacultyCandidates.length > 0 ? 'available faculty' : 'no faculty');
+      unscheduled.push(
+        `${task.subject.name} · Sem ${task.semesterNumber} Div ${task.divisionName} · ${task.requiredCount} lectures · Faculty: ${facultyName}`
+      );
     }
   }
 
-  // ---- Step 5: Genetic optimisation of valid schedules ----
-  // Backtracking above creates a fully valid timetable first. The genetic pass
-  // never accepts an invalid placement: its chromosome mutations and crossover
-  // both use getCandidates(), so faculty, room, division, leave and break rules
-  // remain protected while the timetable becomes more naturally distributed.
-  const toAssignment = (task: (typeof tasks)[number], candidate: SlotCandidate): Assignment => ({
+  // ---- Step 7: Genetic optimisation (only re-slots, never re-assigns faculty) ----
+  const toAssignment = (task: Task, candidate: SlotCandidate): Assignment => ({
     subjectId: task.subject.id,
     facultyId: candidate.faculty.id,
     classroomId: candidate.classroom.id,
@@ -544,8 +567,8 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
       const candidates = getCandidates(units[index], remaining);
       if (candidates.length === 0) continue;
 
-      // Choose from the best options, rather than always the first one, to
-      // create useful variation in a repeatable conflict-free population.
+      // NOTE: getCandidates() respects strict faculty binding, so mutations never
+      // change which faculty teaches a subject — only the day/time/room.
       const choiceRange = Math.min(candidates.length, 8);
       const candidate = candidates[Math.floor(Math.random() * choiceRange)];
       chromosome[index] = toAssignment(units[index], candidate);
@@ -557,25 +580,46 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     let score = 100_000;
     const subjectDayCount = new Map<string, number>();
     const subjectTimeCount = new Map<string, number>();
-    const facultyCount = new Map<string, number>();
+    const facultyDailyCount = new Map<string, number>();
+    const facultyWeeklyCount = new Map<string, number>();
 
     for (const assignment of chromosome) {
       const subjectDayKey = `${assignment.subjectId}:${assignment.divisionId}:${assignment.day}`;
       const subjectTimeKey = `${assignment.subjectId}:${assignment.divisionId}:${assignment.startTime}`;
+      const facultyDayKey = `${assignment.facultyId}:${assignment.day}`;
+
       subjectDayCount.set(subjectDayKey, (subjectDayCount.get(subjectDayKey) || 0) + 1);
       subjectTimeCount.set(subjectTimeKey, (subjectTimeCount.get(subjectTimeKey) || 0) + 1);
-      facultyCount.set(assignment.facultyId, (facultyCount.get(assignment.facultyId) || 0) + 1);
+      facultyDailyCount.set(facultyDayKey, (facultyDailyCount.get(facultyDayKey) || 0) + 1);
+      facultyWeeklyCount.set(assignment.facultyId, (facultyWeeklyCount.get(assignment.facultyId) || 0) + 1);
     }
 
-    // Spread a subject through the week and rotate its time. These are soft
-    // preferences; the strict rules were already enforced before this phase.
+    // Spread subjects across the week
     for (const count of subjectDayCount.values()) score -= Math.max(0, count - 1) * 180;
+    // Vary the time position of repeated subjects
     for (const count of subjectTimeCount.values()) score -= Math.max(0, count - 1) * 45;
 
-    const loads = [...facultyCount.values()];
+    // Penalize faculty over-concentrated days
+    for (const [key, count] of facultyDailyCount.entries()) {
+      const facultyId = key.split(':')[0];
+      const fac = faculty.find(f => f.id === facultyId);
+      const dailyTarget = fac?.dailyLoad && fac.dailyLoad > 0 ? fac.dailyLoad : config.maxLecturesPerFaculty;
+      if (count > dailyTarget) score -= (count - dailyTarget) * 60;
+    }
+
+    // Penalize faculty over soft weekly target (hard cap is already enforced in getCandidates)
+    for (const [facultyId, count] of facultyWeeklyCount.entries()) {
+      const fac = faculty.find(f => f.id === facultyId);
+      if (!fac) continue;
+      const softTarget = getFacultySoftWeeklyTarget(fac);
+      if (count > softTarget) score -= (count - softTarget) * 50;
+    }
+
+    // Balanced load distribution
+    const loads = [...facultyWeeklyCount.values()];
     if (loads.length > 1) {
       const average = loads.reduce((sum, load) => sum + load, 0) / loads.length;
-      score -= loads.reduce((sum, load) => sum + Math.pow(load - average, 2), 0) * 8;
+      score -= loads.reduce((sum, load) => sum + Math.pow(load - average, 2), 0) * 5;
     }
 
     return score;
@@ -596,8 +640,8 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
   };
 
   if (assignments.length === units.length && units.length > 1) {
-    const populationSize = 12;
-    const generations = 24;
+    const populationSize = 14;
+    const generations = 28;
     let population: Assignment[][] = [cloneChromosome(assignments)];
 
     while (population.length < populationSize) {
@@ -606,7 +650,7 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
 
     for (let generation = 0; generation < generations; generation += 1) {
       const ranked = [...population].sort((left, right) => chromosomeFitness(right) - chromosomeFitness(left));
-      const elites = ranked.slice(0, 3);
+      const elites = ranked.slice(0, 4);
       const nextPopulation = elites.map(cloneChromosome);
 
       while (nextPopulation.length < populationSize) {
@@ -624,7 +668,7 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     assignments.splice(0, assignments.length, ...best);
   }
 
-  // ---- Step 6: Convert to TimetableEntry ----
+  // ---- Step 8: Convert to TimetableEntry ----
   const entries: TimetableEntry[] = assignments.map(a => ({
     id: generateId(),
     timeSlotId: a.timeSlotId,
@@ -639,7 +683,7 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     isPublished: false,
   }));
 
-  // ---- Step 7: Conflict Detection ----
+  // ---- Step 9: Conflict Detection ----
   const conflicts = detectConflicts(entries, faculty, classrooms, subjects, semesters, config);
 
   for (const item of unscheduled) {
@@ -647,12 +691,12 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
       id: generateId(),
       type: 'validation_error',
       severity: 'error',
-      description: `No free class time remains for ${item}.`,
+      description: `Could not schedule: ${item}`,
       affectedEntries: [],
       suggestions: [
-        'Add enough lecture slots, rooms, or eligible faculty for the full curriculum',
-        'Review faculty leave, unavailable slots, and workload limits',
-        'The system keeps all required subject lectures; it does not reduce coverage automatically',
+        'Check that the faculty is Active and not on leave',
+        'Ensure there are enough time slots for all required lectures',
+        'For visiting faculty: verify their weekly limit covers all assigned subjects',
       ],
     });
   }
@@ -688,7 +732,6 @@ export function detectConflicts(
 ): Conflict[] {
   const conflicts: Conflict[] = [];
 
-  // Group entries by day + slot
   const bySlot: Record<string, TimetableEntry[]> = {};
   for (const entry of entries) {
     const key = `${entry.day}__${entry.timeSlotId}`;
@@ -712,9 +755,12 @@ export function detectConflicts(
           id: generateId(),
           type: 'faculty_conflict',
           severity: 'error',
-          description: `${f?.name || 'Faculty'} is double-booked on ${day}`,
+          description: `${f?.name || 'A faculty member'} is double-booked on ${day} — 2 lectures at the same time.`,
           affectedEntries: fEntries.map(e => e.id),
-          suggestions: ['Assign another faculty', 'Move one lecture to a different slot'],
+          suggestions: [
+            `Move one of ${f?.name || 'their'} lectures to a free slot`,
+            'Check if both subjects require this faculty at the same time',
+          ],
           day,
           facultyId: fId,
         });
@@ -734,9 +780,9 @@ export function detectConflicts(
           id: generateId(),
           type: 'room_conflict',
           severity: 'error',
-          description: `Room ${room?.roomNumber || rId} is double-booked on ${day}`,
+          description: `Room ${room?.roomNumber || rId} has ${rEntries.length} classes booked at the same time on ${day}.`,
           affectedEntries: rEntries.map(e => e.id),
-          suggestions: ['Assign a different room', 'Check room availability'],
+          suggestions: ['Assign a different room to one of these classes', 'Add more classrooms if needed'],
           day,
           roomId: rId,
         });
@@ -759,9 +805,9 @@ export function detectConflicts(
           id: generateId(),
           type: 'division_conflict',
           severity: 'error',
-          description: `Division ${div?.name || dId} (Sem ${sem?.number}) has ${divEntries.length} overlapping lectures on ${day}`,
+          description: `Division ${div?.name || dId} (Sem ${sem?.number}) has ${divEntries.length} classes at the same time on ${day}. Students can't be in two places at once.`,
           affectedEntries: divEntries.map(e => e.id),
-          suggestions: ['Move one lecture to a free slot'],
+          suggestions: ['Move one lecture to a different time slot on the same day'],
           day,
         });
       }

@@ -1,8 +1,8 @@
-import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Faculty, Subject } from "@/types";
+import { Faculty } from "@/types";
 import { useTimetableStore } from "@/store/timetableStore";
 import { Button } from "@/components/ui/button";
+import { Info } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -36,6 +36,7 @@ const FacultyForm = ({ initialData, onSuccess, onCancel }: FacultyFormProps) => 
       unavailableSlots: [],
       weeklyLoad: 16,
       dailyLoad: 4,
+      type: "permanent",
       status: "active",
     },
   });
@@ -43,6 +44,7 @@ const FacultyForm = ({ initialData, onSuccess, onCancel }: FacultyFormProps) => 
   const department = watch("department");
   const designation = watch("designation");
   const status = watch("status");
+  const facultyType = watch("type");
   const subjectIds = watch("subjectIds");
 
   const onSubmit = (data: Faculty) => {
@@ -128,11 +130,38 @@ const FacultyForm = ({ initialData, onSuccess, onCancel }: FacultyFormProps) => 
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="weeklyLoad">Max Weekly Lectures</Label>
+          <Label>Faculty Type</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {(["permanent", "visiting"] as const).map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setValue("type", t)}
+                className={`py-2.5 px-4 rounded-xl border text-sm font-medium transition-all capitalize ${
+                  facultyType === t
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:border-primary/40"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-start gap-1.5 p-2.5 rounded-lg bg-secondary/50 text-xs text-muted-foreground">
+            <Info className="w-3 h-3 shrink-0 mt-0.5 text-primary" />
+            {facultyType === "visiting"
+              ? <span><strong className="text-foreground">Hard limit:</strong> Visiting faculty will never exceed their weekly limit. Extra lectures are skipped.</span>
+              : <span><strong className="text-foreground">Soft limit:</strong> Permanent faculty prefer not to exceed their limit but can if needed.</span>
+            }
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="weeklyLoad">Weekly Lecture Limit</Label>
           <Input 
             id="weeklyLoad" 
             type="number" 
-            {...register("weeklyLoad", { required: true, min: 1, max: 40 })} 
+            {...register("weeklyLoad", { required: true, min: 1, max: 60 })} 
           />
         </div>
 
