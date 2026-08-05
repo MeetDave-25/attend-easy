@@ -73,22 +73,24 @@ const AppShell = () => {
                 <motion.div
                   key={location.pathname}
                   variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                >
-                  <Routes>
-                    <Route index element={<Navigate to="dashboard" replace />} />
-                    <Route path="dashboard" element={currentUser?.role === "faculty" ? <FacultyPortal /> : <DashboardOverview />} />
-                    <Route path="faculty" element={<FacultyManager />} />
-                    <Route path="subjects" element={<SubjectManager />} />
-                    <Route path="classrooms" element={<ClassroomManager />} />
-                    <Route path="semesters" element={<SemesterManager />} />
-                    <Route path="timeslots" element={<TimeSlotManager />} />
-                    <Route path="settings" element={<CollegeSettings />} />
-                    <Route path="generator" element={<TimetableGeneratorV2 />} />
-                    <Route path="timetable" element={currentUser?.role === "faculty" ? <FacultyPortal /> : <TimetableViews />} />
-                    <Route path="conflicts" element={
+                  import TimetableGeneratorV2 from "../timetable/TimetableGeneratorV2";
+                  import TimetableWizard from "../timetable/TimetableWizard";
+                  import TimetableViews from "../timetable/TimetableViews";
+                  //...
+                                    <Routes>
+                                      <Route index element={<Navigate to="dashboard" replace />} />
+                                      <Route path="dashboard" element={currentUser?.role === "faculty" ? <FacultyPortal /> : <DashboardOverview />} />
+                                      <Route path="faculty" element={<FacultyManager />} />
+                                      <Route path="subjects" element={<SubjectManager />} />
+                                      <Route path="classrooms" element={<ClassroomManager />} />
+                                      <Route path="semesters" element={<SemesterManager />} />
+                                      <Route path="timeslots" element={<TimeSlotManager />} />
+                                      <Route path="settings" element={<CollegeSettings />} />
+                                      <Route path="generator" element={<TimetableGeneratorV2 />} />
+                                      <Route path="wizard" element={<TimetableWizard />} />
+                                      <Route path="timetable" element={currentUser?.role === "faculty" ? <FacultyPortal /> : <TimetableViews />} />
+                                      <Route path="conflicts" element={
+                  //...
                       <div className="space-y-6">
                         <div>
                           <h2 className="text-2xl font-bold tracking-tight">Conflict Checker</h2>

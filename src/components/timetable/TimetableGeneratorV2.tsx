@@ -9,6 +9,59 @@ import { Zap, AlertTriangle, CheckCircle2, RotateCcw, Calendar as CalendarIcon, 
 import { motion } from "framer-motion";
 import ConflictPanel from "./ConflictPanel";
 import { downloadTimetableCsv } from "@/lib/timetableExport";
+import { Semester, Subject } from "@/types";
+import { generateId } from "@/lib/utils";
+
+const cleanDivisionName = (value: string | undefined) => String(value || "")
+  .trim()
+  .toUpperCase()
+  .replace(/^DIV(?:ISION)?\s*/, "");
+
+// Imported college sheets often contain subjects for Year 2/3 before the
+// corresponding semester/division records are added. Build those missing
+// records automatically so one Generate click always includes every year.
+const deriveCompleteSemesters = (current: Semester[], subjects: Subject[]): Semester[] => {
+  const complete = current.map((semester) => ({
+    ...semester,
+    divisions: semester.divisions.map((division) => ({ ...division })),
+  }));
+
+  for (const subject of subjects) {
+    const semesterNumber = Number(subject.semester) || Math.max(1, (Number(subject.year) || 1) * 2 - 1);
+    let semester = complete.find((item) => Number(item.number) === semesterNumber);
+    if (!semester) {
+      semester = {
+        id: generateId(),
+        number: semesterNumber,
+        year: Number(subject.year) || Math.ceil(semesterNumber / 2),
+        isActive: true,
+        divisions: [],
+      };
+      complete.push(semester);
+    }
+
+    const listedDivisions = cleanDivisionName(subject.division)
+      .split(/[,/&]+/)
+      .map((division) => division.trim())
+      .filter(Boolean)
+      .filter((division) => division !== "ALL");
+    const divisionsToEnsure = listedDivisions.length > 0 ? listedDivisions : semester.divisions.length > 0 ? [] : ["A"];
+
+    for (const divisionName of divisionsToEnsure) {
+      if (!semester.divisions.some((division) => cleanDivisionName(division.name) === divisionName)) {
+        semester.divisions.push({
+          id: generateId(),
+          semesterId: semester.id,
+          name: divisionName,
+          studentCount: 60,
+          subjectIds: [],
+        });
+      }
+    }
+  }
+
+  return complete.sort((left, right) => left.number - right.number);
+};
 
 const TimetableGeneratorV2 = () => {
   const navigate = useNavigate();
@@ -16,6 +69,8 @@ const TimetableGeneratorV2 = () => {
   const { 
     collegeConfig, faculty, subjects, classrooms, semesters, timeSlots, leaveEntries,
     isGenerating, setIsGenerating, setTimetableEntries, setGenerationResult, setConflicts, addNotification,
+    setSemesters,
+    setSelectedSemester, setSelectedDivision,
     generationResult, conflicts, timetableEntries
   } = store;
 
@@ -38,13 +93,18 @@ const TimetableGeneratorV2 = () => {
   };
 
   const handleGenerate = () => {
+    const completeSemesters = deriveCompleteSemesters(semesters, subjects);
     // Validation
     if (!collegeConfig.isConfigured) return toast.error("Please configure college settings first");
     if (faculty.length === 0) return toast.error("Add at least one faculty member");
     if (subjects.length === 0) return toast.error("Add at least one subject");
     if (classrooms.length === 0) return toast.error("Add at least one classroom");
-    if (semesters.length === 0) return toast.error("Add at least one semester");
+    if (completeSemesters.length === 0) return toast.error("Add at least one subject with a semester or year");
     if (timeSlots.length === 0) return toast.error("Configure time slots first");
+
+    if (completeSemesters.length !== semesters.length || completeSemesters.some((semester, index) => semester.divisions.length !== semesters.find((item) => item.id === semester.id)?.divisions.length)) {
+      setSemesters(completeSemesters);
+    }
 
     setIsGenerating(true);
     setProgress(0);
@@ -77,7 +137,7 @@ const TimetableGeneratorV2 = () => {
           faculty,
           subjects,
           classrooms,
-          semesters,
+          semesters: completeSemesters,
           timeSlots,
           leaveEntries,
         });
@@ -90,6 +150,9 @@ const TimetableGeneratorV2 = () => {
         setConflicts(result.conflicts);
         
         if (result.success) {
+          // Always open the timetable with every generated year visible.
+          setSelectedSemester("all");
+          setSelectedDivision("all");
           addNotification({
             type: "timetable_published",
             title: "Timetable updated",
@@ -112,6 +175,9 @@ const TimetableGeneratorV2 = () => {
 
   const errorCount = conflicts.filter(c => c.severity === 'error').length;
   const warningCount = conflicts.filter(c => c.severity === 'warning').length;
+  const generatedSemesters = Array.from(new Set(
+    timetableEntries.map(entry => entry.semesterId)
+  )).map(id => semesters.find(semester => semester.id === id)).filter(Boolean);
   return (
     <div className="space-y-8 animate-fade-in max-w-5xl mx-auto">
       <div className="text-center space-y-4 mb-10">
@@ -187,6 +253,11 @@ const TimetableGeneratorV2 = () => {
               </p>
               <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Errors</p>
             </div>
+            {generationResult.success && (
+              <div className="col-span-1 md:col-span-3 rounded-2xl border border-green-500/20 bg-green-500/5 px-5 py-4 text-center text-sm text-muted-foreground">
+                Generated together: {generatedSemesters.map(semester => `Year ${semester!.year} · Sem ${semester!.number}`).join("  |  ") || "all uploaded semesters"}.
+              </div>
+            )}
           </div>
 
           {/* Conflict Panel */}

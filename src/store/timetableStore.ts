@@ -6,6 +6,7 @@ import {
   LeaveEntry, GenerationResult,
 } from '@/types';
 import { generateId } from '@/lib/utils';
+import { detectConflicts } from '@/lib/scheduler';
 
 interface TimetableState {
   // Auth
@@ -71,6 +72,7 @@ interface TimetableState {
   // Actions — Semesters
   addSemester: (semester: Omit<Semester, 'id'>) => void;
   addSemesterMany: (semesters: Omit<Semester, 'id'>[]) => void;
+  setSemesters: (semesters: Semester[]) => void;
   updateSemester: (id: string, updates: Partial<Semester>) => void;
   deleteSemester: (id: string) => void;
   addDivision: (semesterId: string, division: Omit<Division, 'id' | 'semesterId'>) => void;
@@ -86,6 +88,7 @@ interface TimetableState {
   // Actions — Timetable
   setTimetableEntries: (entries: TimetableEntry[]) => void;
   updateTimetableEntry: (id: string, updates: Partial<TimetableEntry>) => void;
+  moveTimetableEntry: (entryId: string, newDay: string, newTimeSlotId: string) => void;
   deleteTimetableEntry: (id: string) => void;
   publishTimetable: () => void;
   unpublishTimetable: () => void;
@@ -219,6 +222,7 @@ export const useTimetableStore = create<TimetableState>()(
         set((s) => ({ semesters: [...s.semesters, { ...sem, id: generateId() }] })),
       addSemesterMany: (semesters) =>
         set((s) => ({ semesters: [...s.semesters, ...semesters.map((semester) => ({ ...semester, id: generateId() }))] })),
+      setSemesters: (semesters) => set({ semesters }),
       updateSemester: (id, updates) =>
         set((s) => ({ semesters: s.semesters.map((sem) => (sem.id === id ? { ...sem, ...updates } : sem)) })),
       deleteSemester: (id) =>
@@ -268,6 +272,27 @@ export const useTimetableStore = create<TimetableState>()(
         set((s) => ({
           timetableEntries: s.timetableEntries.map((e) => (e.id === id ? { ...e, ...updates } : e)),
         })),
+      moveTimetableEntry: (entryId, newDay, newTimeSlotId) => {
+        const { timeSlots, timetableEntries, faculty, classrooms, subjects, semesters, collegeConfig } = get();
+        const newSlot = timeSlots.find(ts => ts.id === newTimeSlotId && ts.day === newDay);
+        if (!newSlot) return;
+
+        const updatedEntries = timetableEntries.map(entry => {
+          if (entry.id === entryId) {
+            return {
+              ...entry,
+              day: newDay,
+              timeSlotId: newTimeSlotId,
+              startTime: newSlot.startTime,
+              endTime: newSlot.endTime,
+            };
+          }
+          return entry;
+        });
+
+        const newConflicts = detectConflicts(updatedEntries, faculty, classrooms, subjects, semesters, collegeConfig);
+        set({ timetableEntries: updatedEntries, conflicts: newConflicts });
+      },
       deleteTimetableEntry: (id) =>
         set((s) => ({ timetableEntries: s.timetableEntries.filter((e) => e.id !== id) })),
       publishTimetable: () => {
@@ -376,12 +401,12 @@ export const useTimetableStore = create<TimetableState>()(
             { 
               id: f1Id, name: 'Dr. Alan Turing', email: 'alan@test.com', department: 'CS', 
               designation: 'Professor', subjectIds: [s1Id], preferredSlots: [], unavailableSlots: [], 
-              weeklyLoad: 0, dailyLoad: 0, status: 'active', phone: '1234'
+              weeklyLoad: 0, dailyLoad: 0, type: 'permanent', status: 'active', phone: '1234'
             },
             { 
               id: f2Id, name: 'Grace Hopper', email: 'grace@test.com', department: 'CS', 
               designation: 'Associate Professor', subjectIds: [s2Id], preferredSlots: [], unavailableSlots: [], 
-              weeklyLoad: 0, dailyLoad: 0, status: 'active', phone: '1234'
+              weeklyLoad: 0, dailyLoad: 0, monthlyLoad: 16, type: 'visiting', status: 'active', phone: '1234'
             }
           ],
           subjects: [

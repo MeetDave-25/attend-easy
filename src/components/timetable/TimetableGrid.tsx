@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useDrop } from 'react-dnd';
 import { useTimetableStore } from "@/store/timetableStore";
 import { TimetableEntry, TimeSlot } from "@/types";
 import { SUBJECT_TYPES } from "@/lib/utils";
 import CellDetailModal from "./CellDetailModal";
+import DraggableTimetableEntry, { ItemTypes } from './DraggableTimetableEntry';
 import { formatTime } from "@/lib/utils";
 
 interface TimetableGridProps {
@@ -12,8 +14,12 @@ interface TimetableGridProps {
 }
 
 const TimetableGrid = ({ viewType, filterId, semesterFilterId = 'all' }: TimetableGridProps) => {
-  const { timetableEntries, timeSlots, collegeConfig, subjects, faculty, classrooms, semesters } = useTimetableStore();
+  const { timetableEntries, timeSlots, collegeConfig, subjects, faculty, classrooms, semesters, moveTimetableEntry } = useTimetableStore();
   const [selectedCell, setSelectedCell] = useState<TimetableEntry | null>(null);
+
+  const handleDrop = (item: { id: string }, day: string, timeSlot: TimeSlot) => {
+    moveTimetableEntry(item.id, day, timeSlot.id);
+  };
 
   // Group and sort time slots
   const uniqueTimeSlots = Array.from(new Set(timeSlots.map(ts => `${ts.startTime}-${ts.endTime}`)))
@@ -56,6 +62,15 @@ const TimetableGrid = ({ viewType, filterId, semesterFilterId = 'all' }: Timetab
     return { type: 'lecture', entries };
   };
 
+  const DropWrapper = ({ day, slot, children }: { day: string, slot: any, children: React.ReactNode }) => {
+    const [, drop] = useDrop(() => ({
+      accept: ItemTypes.TIMETABLE_ENTRY,
+      drop: (item: { id: string }) => handleDrop(item, day, slot),
+    }), [day, slot]);
+
+    return <td ref={drop} className="border-l border-border p-1.5 align-top">{children}</td>;
+  };
+
   return (
     <>
       <div className="overflow-x-auto">
@@ -96,12 +111,13 @@ const TimetableGrid = ({ viewType, filterId, semesterFilterId = 'all' }: Timetab
                     }
 
                     if (!cellData || !cellData.entries || cellData.entries.length === 0) {
-                      return <td key={`${day}-${slot.id}`} className="border-l border-border tt-cell-empty"></td>;
+                      const timeSlotForDrop = timeSlots.find(ts => ts.day === day && ts.startTime === slot.startTime);
+                      return <DropWrapper day={day} slot={timeSlotForDrop}><div className="h-full"></div></DropWrapper>;
                     }
 
                     // Display the first entry (or multiple if conflict)
                     return (
-                      <td key={`${day}-${slot.id}`} className="border-l border-border p-1.5 align-top">
+                      <DropWrapper day={day} slot={timeSlots.find(ts => ts.day === day && ts.startTime === slot.startTime)}>
                         <div className="flex flex-col gap-1.5 h-full">
                           {cellData.entries.map((entry, idx) => {
                             const subject = subjects.find(s => s.id === entry.subjectId);
@@ -117,35 +133,36 @@ const TimetableGrid = ({ viewType, filterId, semesterFilterId = 'all' }: Timetab
                             const isConflict = viewType === 'student' && cellData.entries.length > 1;
 
                             return (
-                              <div 
-                                key={entry.id}
-                                onClick={() => setSelectedCell(entry)}
-                                className={`
-                                  relative p-2 rounded-lg text-sm transition-all duration-200 cursor-pointer h-full border border-transparent shadow-sm hover:shadow-md hover:-translate-y-0.5
-                                  ${isConflict ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/50' : typeConfig?.bgClass}
-                                `}
-                              >
-                                {isConflict && (
-                                  <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" title="Conflict Detected" />
-                                )}
-                                
-                                <p className="font-bold leading-tight mb-1">{subject?.name || 'Unknown'}</p>
-                                {viewType === 'faculty' ? (
-                                  <div className="text-xs opacity-90 space-y-0.5 font-medium">
-                                    <p>{fac?.name || 'No Faculty'}</p>
-                                    <p>Year {semester?.year || '-'} · Sem {semester?.number || '-'} · Div {division?.name || '-'}</p>
-                                    <p>Room {room?.roomNumber || 'Unassigned'}</p>
-                                  </div>
-                                ) : (
-                                  <div className="text-xs opacity-90 font-semibold">
-                                    <p className="text-sm">Room {room?.roomNumber || 'Unassigned'}</p>
-                                  </div>
-                                )}
-                              </div>
+                              <DraggableTimetableEntry key={entry.id} entry={entry}>
+                                <div 
+                                  onClick={() => setSelectedCell(entry)}
+                                  className={`
+                                    relative p-2 rounded-lg text-sm transition-all duration-200 cursor-pointer h-full border border-transparent shadow-sm hover:shadow-md hover:-translate-y-0.5
+                                    ${isConflict ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/50' : typeConfig?.bgClass}
+                                  `}
+                                >
+                                  {isConflict && (
+                                    <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" title="Conflict Detected" />
+                                  )}
+                                  
+                                  <p className="font-bold leading-tight mb-1">{subject?.name || 'Unknown'}</p>
+                                  {viewType === 'faculty' ? (
+                                    <div className="text-xs opacity-90 space-y-0.5 font-medium">
+                                      <p>{fac?.name || 'No Faculty'}</p>
+                                      <p>Year {semester?.year || '-'} · Sem {semester?.number || '-'} · Div {division?.name || '-'}</p>
+                                      <p>Room {room?.roomNumber || 'Unassigned'}</p>
+                                    </div>
+                                  ) : (
+                                    <div className="text-xs opacity-90 font-semibold">
+                                      <p className="text-sm">Room {room?.roomNumber || 'Unassigned'}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </DraggableTimetableEntry>
                             );
                           })}
                         </div>
-                      </td>
+                      </DropWrapper>
                     );
                   })}
                 </tr>

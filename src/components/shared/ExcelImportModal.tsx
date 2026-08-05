@@ -24,9 +24,13 @@ const normalizeHeader = (header: string) =>
 
 const normalizeCell = (value: ExcelCell) => String(value ?? "").trim();
 
-const normalizeRows = (rows: ExcelRow[]) => rows.map((row) =>
-  Object.fromEntries(Object.entries(row).map(([key, value]) => [normalizeHeader(key), value]))
-);
+const normalizeRows = (rows: ExcelRow[]) => rows.map((row, index) => {
+  const normalized = Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [normalizeHeader(key), value])
+  );
+  (normalized as any).__rowNum__ = index + 2; // +2 because sheet data is 1-indexed and headers are row 1
+  return normalized;
+});
 
 const readCell = (row: Record<string, ExcelCell>, aliases: string[], fallback = "") => {
   for (const alias of aliases) {
@@ -162,7 +166,7 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [preview, setPreview] = useState<ExcelRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<string[]>([]);
   const [success, setSuccess] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -175,7 +179,7 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
   };
 
   const processFile = (file: File) => {
-    setError(null);
+    setErrors([]);
     setSuccess(null);
     setPreview(null);
     setIsProcessing(true);
@@ -189,7 +193,7 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
         const rows = XLSX.utils.sheet_to_json<ExcelRow>(sheet, { defval: "" });
 
         if (rows.length === 0) {
-          setError("The file is empty or has no data rows.");
+          setErrors(["The file is empty or has no data rows."]);
           setIsProcessing(false);
           return;
         }
@@ -197,7 +201,7 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
         setPreview(rows.slice(0, 3)); // Show first 3 rows as preview
         importData(rows);
       } catch {
-        setError("Failed to parse the Excel file. Please use the correct template.");
+        setErrors(["Failed to parse the Excel file. Please use the correct template."]);
       }
       setIsProcessing(false);
     };
@@ -206,6 +210,11 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
 
   const importData = (rows: ExcelRow[]) => {
     try {
+      const validationErrors: string[] = [];
+      const existingFaculty = useTimetableStore.getState().faculty;
+      const existingEmails = new Set(existingFaculty.map(f => f.email.toLowerCase()));
+      const fileEmails = new Set<string>();
+
       const normalizedRows = normalizeRows(rows).filter((row) =>
         Object.values(row).some((value) => normalizeCell(value))
       );
@@ -216,31 +225,64 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
       }
 
       if (activeTab === "faculty") {
-        const imported: Omit<Faculty, "id">[] = normalizedRows.map((r, index) => ({
-          name: readCell(r, ["Name", "Faculty Name", "Teacher Name"]),
-          email: readCell(r, ["Email", "Email ID", "Faculty Email"], `imported.faculty.${importStamp}.${index + 1}@local.invalid`),
-          phone: readCell(r, ["Phone", "Phone Number", "Mobile"]),
-          department: readCell(r, ["Department", "Dept"], "General"),
-          designation: readCell(r, ["Designation", "Role"], "Lecturer"),
-          subjectIds: [],
-          preferredSlots: [],
-          unavailableSlots: [],
-          weeklyLoad: readNumber(r, ["Weekly Load", "Weekly Lectures", "Max Lectures Per Week"], 18),
-          dailyLoad: readNumber(r, ["Daily Load", "Daily Lectures", "Max Lectures Per Day"], 4),
-          status: normalizeStatus(readCell(r, ["Status"]), ["active", "inactive", "on-leave"], "active") as Faculty["status"],
-        }));
-        if (imported.some((faculty) => !faculty.name)) throw new Error("Faculty Name is required.");
+        const imported: Omit<Faculty, "id">[] = normalizedRows.map((r, index) => {
+          const rowNum = (r as any).__rowNum__;
+          const name = readCell(r, ["Name", "Faculty Name", "Teacher Name"]);
+          if (!name) {
+            validationErrors.push(`Row ${rowNum}: Faculty Name is required.`);
+          }
+
+          const email = readCell(r, ["Email", "Email ID", "Faculty Email"], `imported.faculty.${importStamp}.${index + 1}@local.invalid`);
+          if (!/^\S+@\S+\.\S+$/.test(email)) {
+            validationErrors.push(`Row ${rowNum}: Invalid email format for "${email}".`);
+          } else {
+            const lowerEmail = email.toLowerCase();
+            if (existingEmails.has(lowerEmail)) {
+              validationErrors.push(`Row ${rowNum}: Email "${email}" already exists in the system.`);
+            }
+            if (fileEmails.has(lowerEmail)) {
+              validationErrors.push(`Row ${rowNum}: Email "${email}" is duplicated in the import file.`);
+            }
+            fileEmails.add(lowerEmail);
+          }
+
+          return {
+            name,
+            email,
+            phone: readCell(r, ["Phone", "Phone Number", "Mobile"]),
+            department: readCell(r, ["Department", "Dept"], "General"),
+            designation: readCell(r, ["Designation", "Role"], "Lecturer"),
+            subjectIds: [],
+            preferredSlots: [],
+            unavailableSlots: [],
+            weeklyLoad: readNumber(r, ["Weekly Load", "Weekly Lectures", "Max Lectures Per Week"], 18),
+            dailyLoad: readNumber(r, ["Daily Load", "Daily Lectures", "Max Lectures Per Day"], 4),
+            status: normalizeStatus(readCell(r, ["Status"]), ["active", "inactive", "on-leave"], "active") as Faculty["status"],
+          };
+        });
+
+        if (validationErrors.length > 0) {
+          setErrors(validationErrors);
+          return;
+        }
+
         useTimetableStore.getState().addFacultyMany(imported);
         setSuccess(`✓ Successfully imported ${imported.length} faculty members`);
 
       } else if (activeTab === "subjects") {
         const imported: Omit<Subject, "id">[] = normalizedRows.map((r, index) => {
           const type = normalizeSubjectType(readCell(r, ["Type", "Subject Type"]));
+          const year = readNumber(r, ["Year", "Academic Year"], 1);
+          const semesterValue = readCell(r, ["Semester", "Semester Number", "Sem"]);
+          // Some college sheets list Year 1/2/3 but do not include a separate
+          // semester column. In that case use the first semester of that year
+          // instead of incorrectly putting every subject in Semester 1.
+          const semester = semesterValue ? readNumber(r, ["Semester", "Semester Number", "Sem"], 1) : Math.max(1, year * 2 - 1);
           return {
             name: readCell(r, ["Name", "Subject Name"]),
             code: readCell(r, ["Code", "Subject Code"], `IMPORTED-${importStamp}-${index + 1}`),
-            year: readNumber(r, ["Year", "Academic Year"], Math.ceil(readNumber(r, ["Semester", "Semester Number", "Sem"], 1) / 2)),
-            semester: readNumber(r, ["Semester", "Semester Number", "Sem"], 1),
+            year,
+            semester,
             division: readCell(r, ["Division", "Div"], "All"),
             type,
             lectureCountPerWeek: readNumber(r, ["Lectures Per Week", "Lecture Count Per Week", "Weekly Lectures"], 3),
@@ -250,7 +292,10 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
             labRequired: type === "lab",
           };
         });
-        if (imported.some((subject) => !subject.name)) throw new Error("Subject Name is required.");
+        if (imported.some((subject) => !subject.name)) {
+          setErrors(["Subject Name is required."]);
+          return;
+        }
         useTimetableStore.getState().addSubjectMany(imported);
         setSuccess(`✓ Successfully imported ${imported.length} subjects`);
 
@@ -269,8 +314,9 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
 
       } else if (activeTab === "semesters") {
         const imported: Omit<Semester, "id">[] = normalizedRows.map((r) => {
-          const semNum = readNumber(r, ["Semester Number", "Semester", "Sem"], 1);
           const year = readNumber(r, ["Year", "Academic Year"], 1);
+          const semesterValue = readCell(r, ["Semester Number", "Semester", "Sem"]);
+          const semNum = semesterValue ? readNumber(r, ["Semester Number", "Semester", "Sem"], 1) : Math.max(1, year * 2 - 1);
           const divNames = readCell(r, ["Division Names (comma-separated)", "Division Names", "Divisions"], "A")
             .split(",").map((division) => division.trim()).filter(Boolean);
 
@@ -286,9 +332,11 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
         setSuccess(`✓ Successfully imported ${rows.length} semesters`);
       }
 
-      toast.success(`Import successful! ${normalizedRows.length} row${normalizedRows.length === 1 ? "" : "s"} added.`);
+      if (errors.length === 0) {
+        toast.success(`Import successful! ${normalizedRows.length} row${normalizedRows.length === 1 ? "" : "s"} added.`);
+      }
     } catch (error) {
-      setError(error instanceof Error ? error.message : "An error occurred while saving the data. Please check the file format.");
+      setErrors([error instanceof Error ? error.message : "An error occurred while saving the data. Please check the file format."]);
     }
   };
 
@@ -330,7 +378,7 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
             {TABS.map(tab => (
               <button
                 key={tab.id}
-                onClick={() => { setActiveTab(tab.id); setPreview(null); setError(null); setSuccess(null); }}
+                onClick={() => { setActiveTab(tab.id); setPreview(null); setErrors([]); setSuccess(null); }}
                 className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
                   activeTab === tab.id
                     ? "gradient-primary text-white shadow-md"
@@ -389,11 +437,16 @@ const ExcelImportModal = ({ isOpen, onClose }: ImportModalProps) => {
 
           {/* Status Messages */}
           <AnimatePresence>
-            {error && (
+            {errors.length > 0 && (
               <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
                 className="flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400">
                 <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                <p className="text-sm">{error}</p>
+                <div className="text-sm">
+                  <p className="font-bold mb-2">Please fix the following {errors.length} error(s):</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {errors.map((e, i) => <li key={i}>{e}</li>)}
+                  </ul>
+                </div>
               </motion.div>
             )}
             {success && (

@@ -40,6 +40,7 @@ const navGroups = [
         label: "Timetable",
         items: [
             { id: "generator", label: "Timetable Generator", icon: Zap, roles: ["hod"] },
+            { id: "wizard", label: "Timetable Wizard", icon: Zap, roles: ["hod"] },
             { id: "timetable", label: "View Timetable", icon: Calendar },
             { id: "conflicts", label: "Conflict Checker", icon: AlertTriangle, roles: ["hod"] },
             { id: "search", label: "Search", icon: Search },

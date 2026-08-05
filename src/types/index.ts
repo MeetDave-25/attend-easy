@@ -45,6 +45,8 @@ export interface Faculty {
   unavailableSlots: string[];
   weeklyLoad: number;
   dailyLoad: number;
+  monthlyLoad?: number;
+  type?: 'permanent' | 'visiting';
   status: 'active' | 'inactive' | 'on-leave';
   avatar?: string;
   phone?: string;

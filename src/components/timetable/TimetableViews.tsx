@@ -80,17 +80,22 @@ const TimetableViews = () => {
               divisionFilterId={viewType === "student" ? selectedDivisionId || "all" : "all"}
               facultyFilterId={viewType === "faculty" ? selectedFacultyId : "all"}
             />
-          ) : (
-            <TimetableGrid
-              viewType={viewType}
-              filterId={viewType === "student" ? `${semester.id}__${selectedDivisionId || "all"}` : selectedFacultyId}
-              semesterFilterId={semester.id}
-            />
-          )}
-        </section>
-      ))}
-    </div>
-  );
+          import { DndProvider } from 'react-dnd';
+          import { HTML5Backend } from 'react-dnd-html5-backend';
+          // ...
+                    ) : (
+                      <DndProvider backend={HTML5Backend}>
+                        <TimetableGrid
+                          viewType={viewType}
+                          filterId={viewType === 'student' ? `${semester.id}__${selectedDivisionId || "all"}` : selectedFacultyId}
+                          semesterFilterId={semester.id}
+                        />
+                      </DndProvider>
+                    )}
+                  </section>
+                ))}
+              </div>
+            );
 
   return (
     <div className="space-y-6 animate-fade-in">

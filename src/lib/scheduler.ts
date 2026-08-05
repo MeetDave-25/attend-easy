@@ -32,6 +32,7 @@ export interface SchedulerInput {
   leaveEntries: LeaveEntry[];
   semesterFilter?: string;
   subjectFilter?: string;
+  dayFilter?: string;
   facultyOverrides?: Record<string, string>;
   classroomOverrides?: Record<string, string>;
 }
@@ -116,6 +117,17 @@ const stableHash = (value: string) => {
     hash |= 0;
   }
   return Math.abs(hash);
+};
+
+const normalizeDivisionName = (value: unknown) => String(value ?? '')
+  .trim()
+  .toUpperCase()
+  .replace(/^DIV(?:ISION)?\s*/, '');
+
+const subjectMatchesDivision = (subjectDivision: unknown, divisionName: string) => {
+  const normalized = normalizeDivisionName(subjectDivision);
+  if (!normalized || normalized === 'ALL') return true;
+  return normalized.split(/[,/&]+/).map(item => item.trim()).includes(normalizeDivisionName(divisionName));
 };
 
 const circularDistance = (left: number, right: number, size: number) =>
@@ -204,12 +216,15 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
     leaveEntries,
     semesterFilter,
     subjectFilter,
+    dayFilter,
     facultyOverrides = {},
     classroomOverrides = {},
   } = input;
 
   const assignments: Assignment[] = [];
   const unscheduled: string[] = [];
+
+  const workingDays = dayFilter ? config.workingDays.filter(d => d === dayFilter) : config.workingDays;
 
   // Filter usable lecture slots
   const lectureSlots = timeSlots.filter(
@@ -247,8 +262,8 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
       const divSubjects = subjects.filter(
         sub =>
           (!subjectFilter || subjectFilter === 'all' || sub.id === subjectFilter) &&
-          sub.semester === semester.number &&
-          (sub.division === division.name || sub.division === 'All' || !sub.division)
+          Number(sub.semester) === Number(semester.number) &&
+          subjectMatchesDivision(sub.division, division.name)
       );
 
       for (const subject of divSubjects) {
@@ -275,7 +290,7 @@ export function generateTimetable(input: SchedulerInput): GenerationResult {
           divisionId: division.id,
           divisionName: division.name,
           semesterNumber: semester.number,
-          requiredCount: targetCount,
+          requiredCount: dayFilter ? Math.min(targetCount, 1) : targetCount,
           scheduledCount: 0,
           facultyCandidates,
         });
